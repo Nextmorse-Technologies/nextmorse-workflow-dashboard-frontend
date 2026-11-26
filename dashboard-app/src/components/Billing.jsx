@@ -37,6 +37,17 @@ export function prefillFromRule(rule, activeRules, clientDomain) {
   };
 }
 
+/* The Service field's mode: a dropdown of the client's rules, a
+   loading placeholder, or a free-text field — the last when the
+   client has no rules, or when "Other" was picked to type a new
+   service instead of one of the listed rules. */
+export const SERVICE_OTHER = '__other';
+export function serviceFieldMode({ hasClient, rulesLoading, rules, selectedRule }) {
+  if (hasClient && rulesLoading) return 'loading';
+  if (hasClient && rules.length > 0 && selectedRule !== SERVICE_OTHER) return 'select';
+  return 'text';
+}
+
 export default function Billing({ api, clients, openInvoices, meta, onWrote, prefill, onPrefillApplied }) {
   const [invClient, setInvClient] = useState('');
   /* The client picked by an "Issue invoice" button (the Billing rules
@@ -124,10 +135,22 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
   }
 
   function handleRuleChange(ruleId) {
-    setSelectedRule(ruleId);
-    const rule = rules.find((r) => String(r.id) === String(ruleId)) || null;
     const clientDomain = (clients || []).find((c) => String(c.id) === String(invClient))?.domain ||
       (prefillClient && prefillClient.domain) || '';
+    if (ruleId === SERVICE_OTHER) {
+      /* A new service, not one of the listed rules: clear the
+         rule-filled fields and let the user type. The domain stays
+         the client's own domain. */
+      setSelectedRule(SERVICE_OTHER);
+      setInvService('');
+      setInvAmount('');
+      setInvTreatment('vat_tds');
+      setInvDueDate('');
+      setInvDomain(clientDomain);
+      return;
+    }
+    setSelectedRule(ruleId);
+    const rule = rules.find((r) => String(r.id) === String(ruleId)) || null;
     const fill = prefillFromRule(rule, rules, clientDomain);
     setInvService(fill.service);
     setInvAmount(fill.amount);
@@ -153,7 +176,9 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
     const clientDomain = pendingPrefill.clientDomain ||
       (clients || []).find((c) => String(c.id) === String(pendingPrefill.clientId))?.domain || '';
     const fill = prefillFromRule(pendingPrefill.rule, rules, clientDomain);
-    setSelectedRule(fill.ruleId);
+    /* A rule that is not among the client's active rules fills as
+       free text — show the text field, with the way back to the list. */
+    setSelectedRule(fill.ruleId || (rules.length > 0 ? SERVICE_OTHER : ''));
     setInvService(fill.service);
     setInvAmount(fill.amount);
     setInvTreatment(fill.treatment);
@@ -318,7 +343,7 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
                 </div>
                 <div className="form-group">
                   <label htmlFor="invService">Service</label>
-                  {invClient && rulesLoading ? (
+                  {serviceFieldMode({ hasClient: !!invClient, rulesLoading, rules, selectedRule }) === 'loading' ? (
                     <input
                       id="invService"
                       className="form-control"
@@ -328,7 +353,7 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
                       value=""
                       readOnly
                     />
-                  ) : invClient && rules.length > 0 ? (
+                  ) : serviceFieldMode({ hasClient: !!invClient, rulesLoading, rules, selectedRule }) === 'select' ? (
                     <select
                       id="invService"
                       className="form-control"
@@ -344,6 +369,7 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
                             : ''}
                         </option>
                       ))}
+                      <option value={SERVICE_OTHER}>Other — type a new service</option>
                     </select>
                   ) : (
                     <input
@@ -364,6 +390,18 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
                       No services on file for this client — type the service.
                     </small>
                   )}
+                  {invClient && selectedRule === SERVICE_OTHER && rules.length > 0 && (
+                    <small className="form-text text-muted">
+                      A new service, not one of the listed rules.{' '}
+                      <button
+                        type="button"
+                        className="btn btn-link btn-sm p-0 align-baseline"
+                        onClick={() => handleRuleChange('')}
+                      >
+                        Back to services
+                      </button>
+                    </small>
+                  )}
                   {rulesError && (
                     <small className="form-text text-danger">{rulesError}</small>
                   )}
@@ -382,7 +420,7 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
                       value={invAmount}
                       onChange={(e) => setInvAmount(e.target.value)}
                     />
-                    {selectedRule && (
+                    {selectedRule && selectedRule !== SERVICE_OTHER && (
                       <small className="form-text text-muted">
                         Filled from the billing rule — change it if this
                         invoice differs.
