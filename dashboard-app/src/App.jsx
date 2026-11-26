@@ -173,7 +173,9 @@ export default function App() {
 
   async function loadClients() {
     try {
-      const resp = await api('/clients?per_page=200');
+      /* Active clients only — the invoice form lists no leads or
+         former clients, and 15 rows fit in one page. */
+      const resp = await api('/clients?status=Active&per_page=200');
       setClients((resp && resp.data) || []);
     } catch (err) {
       setDashError(friendlyError(err));

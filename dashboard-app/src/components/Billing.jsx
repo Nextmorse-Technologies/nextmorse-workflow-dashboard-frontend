@@ -12,8 +12,14 @@ function FieldError({ msg }) {
 }
 
 export default function Billing({ api, clients, openInvoices, meta, onWrote }) {
-  const [clientFilter, setClientFilter] = useState('');
   const [invClient, setInvClient] = useState('');
+  /* The selected client's billing rules (their services). Loaded from
+     GET /billing-rules?client_id=…&status=active when the client
+     changes; the service, amount and treatment fill in from the rule. */
+  const [rules, setRules] = useState([]);
+  const [rulesLoading, setRulesLoading] = useState(false);
+  const [rulesError, setRulesError] = useState('');
+  const [selectedRule, setSelectedRule] = useState('');
   const [invService, setInvService] = useState('');
   const [invAmount, setInvAmount] = useState('');
   const [invTreatment, setInvTreatment] = useState('vat_tds');
@@ -51,10 +57,54 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote }) {
     }
   }, [todayAd]);
 
-  const q = clientFilter.toLowerCase();
-  const filteredClients = clients.filter(
-    (c) => !q || (c.name || '').toLowerCase().includes(q),
-  );
+  /* The client list arrives pre-filtered to Active from the API; keep
+     only Active here too, in case an older API ignores the filter. */
+  const activeClients = clients.filter((c) => c.status === 'Active');
+
+  async function loadRules(clientId) {
+    setRules([]);
+    setSelectedRule('');
+    setRulesError('');
+    if (!clientId) return;
+    setRulesLoading(true);
+    try {
+      const resp = await api(
+        '/billing-rules?client_id=' + clientId + '&status=active&per_page=100',
+      );
+      setRules((resp && resp.data) || []);
+    } catch (err) {
+      /* No rules, no problem: the service stays a free-text field. */
+      setRulesError(friendlyError(err));
+    } finally {
+      setRulesLoading(false);
+    }
+  }
+
+  function handleClientChange(clientId) {
+    setInvClient(clientId);
+    setInvService('');
+    setInvAmount('');
+    setInvTreatment('vat_tds');
+    loadRules(clientId);
+  }
+
+  function handleRuleChange(ruleId) {
+    setSelectedRule(ruleId);
+    const rule = rules.find((r) => String(r.id) === String(ruleId)) || null;
+    if (!rule) {
+      setInvService('');
+      setInvAmount('');
+      setInvTreatment('vat_tds');
+      return;
+    }
+    setInvService(rule.service || '');
+    /* Some rules have no fixed amount (e.g. a cost-share on actuals) —
+       leave the amount for the user to type in that case. */
+    if (rule.amount_npr !== null && rule.amount_npr !== undefined) {
+      setInvAmount(String(rule.amount_npr));
+    }
+    if (rule.treatment) setInvTreatment(rule.treatment);
+  }
 
   const selectedOpenInvoice = openInvoices.find(
     (inv) => String(inv.id) === String(payInvoiceId),
@@ -103,6 +153,7 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote }) {
       setInvFormSuccess(lines.join(' '));
       setInvService('');
       setInvAmount('');
+      setSelectedRule('');
       setInvDomain('');
       setInvNotes('');
       onWrote();
@@ -176,54 +227,83 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote }) {
             <div className="card-body">
               <h5 className="card-title">Create invoice</h5>
               <p className="text-muted small">
-                The API numbers the invoice, works out the fiscal year and the
-                VAT/TDS split, and marks tax invoices. Send only the billing
-                facts below.
+                Pick a client — their services and amounts fill in from
+                their billing rules. The API numbers the invoice, works out
+                the fiscal year and the VAT/TDS split, and marks tax invoices.
               </p>
               <form onSubmit={createInvoice} noValidate>
-                <div className="form-group">
-                  <label htmlFor="invClientFilter">Find client</label>
-                  <input
-                    id="invClientFilter"
-                    className="form-control"
-                    type="text"
-                    placeholder="Type to filter the client list"
-                    autoComplete="off"
-                    value={clientFilter}
-                    onChange={(e) => setClientFilter(e.target.value)}
-                  />
-                </div>
                 <div className="form-group">
                   <label htmlFor="invClient">Client</label>
                   <select
                     id="invClient"
                     className="form-control"
                     value={invClient}
-                    onChange={(e) => setInvClient(e.target.value)}
+                    onChange={(e) => handleClientChange(e.target.value)}
                   >
-                    {filteredClients.length ? (
-                      filteredClients.map((c) => (
+                    <option value="">Pick a client…</option>
+                    {activeClients.length ? (
+                      activeClients.map((c) => (
                         <option key={c.id} value={c.id}>
-                          {c.name} ({c.status || ''})
+                          {c.name}
                         </option>
                       ))
                     ) : (
-                      <option value="">No clients found</option>
+                      <option value="">No active clients</option>
                     )}
                   </select>
                   <FieldError msg={invErrors.client_id && invErrors.client_id.join(' ')} />
                 </div>
                 <div className="form-group">
                   <label htmlFor="invService">Service</label>
-                  <input
-                    id="invService"
-                    className="form-control"
-                    type="text"
-                    placeholder="e.g. Hosting renewal — example.com"
-                    maxLength="1000"
-                    value={invService}
-                    onChange={(e) => setInvService(e.target.value)}
-                  />
+                  {invClient && rulesLoading ? (
+                    <input
+                      id="invService"
+                      className="form-control"
+                      type="text"
+                      placeholder="Loading services…"
+                      disabled
+                      value=""
+                      readOnly
+                    />
+                  ) : invClient && rules.length > 0 ? (
+                    <select
+                      id="invService"
+                      className="form-control"
+                      value={selectedRule}
+                      onChange={(e) => handleRuleChange(e.target.value)}
+                    >
+                      <option value="">Pick a service…</option>
+                      {rules.map((r) => (
+                        <option key={r.id} value={r.id}>
+                          {r.service}
+                          {r.amount_npr !== null && r.amount_npr !== undefined
+                            ? ' — ' + money(r.amount_npr)
+                            : ''}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      id="invService"
+                      className="form-control"
+                      type="text"
+                      placeholder={invClient
+                        ? 'e.g. Hosting renewal — example.com'
+                        : 'Pick a client first'}
+                      maxLength="1000"
+                      disabled={!invClient}
+                      value={invService}
+                      onChange={(e) => setInvService(e.target.value)}
+                    />
+                  )}
+                  {invClient && !rulesLoading && rules.length === 0 && (
+                    <small className="form-text text-muted">
+                      No services on file for this client — type the service.
+                    </small>
+                  )}
+                  {rulesError && (
+                    <small className="form-text text-danger">{rulesError}</small>
+                  )}
                   <FieldError msg={invErrors.service && invErrors.service.join(' ')} />
                 </div>
                 <div className="form-row">
@@ -239,6 +319,12 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote }) {
                       value={invAmount}
                       onChange={(e) => setInvAmount(e.target.value)}
                     />
+                    {selectedRule && (
+                      <small className="form-text text-muted">
+                        Filled from the billing rule — change it if this
+                        invoice differs.
+                      </small>
+                    )}
                     <FieldError msg={invErrors.amount_npr && invErrors.amount_npr.join(' ')} />
                   </div>
                   <div className="form-group col-md-6">
