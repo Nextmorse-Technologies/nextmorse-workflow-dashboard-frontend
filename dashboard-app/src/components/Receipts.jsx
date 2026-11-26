@@ -1,58 +1,10 @@
 import { useState } from 'react';
 import { money } from '../api.js';
+import { dateLabel, fyLabel, fyOfBs, parseBs } from '../dates.js';
 
-/* Nepali months, Baisakh first — the API returns BS dates either as
-   ISO (2083-08-07) or written out (4 Mangsir 2083 BS). */
-const BS_MONTHS = [
-  'Baisakh', 'Jestha', 'Ashadh', 'Shrawan', 'Bhadra', 'Ashwin',
-  'Kartik', 'Mangsir', 'Poush', 'Magh', 'Falgun', 'Chaitra',
-];
-
-function parseBs(bs) {
-  if (!bs) return null;
-  let m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(bs);
-  if (m) return { y: +m[1], mo: +m[2], d: +m[3] };
-  m = /^(\d{1,2}) (\w+) (\d{4})/.exec(bs);
-  if (m) {
-    const mo = BS_MONTHS.indexOf(m[2]) + 1;
-    if (mo) return { y: +m[3], mo, d: +m[1] };
-  }
-  return null;
-}
-
-/* Fiscal year a receipt belongs to — the FY starts in Shrawan
-   (month 4), so Baisakh–Ashadh belong to the previous FY. */
+/* Fiscal year a receipt belongs to, from its BS date. */
 function fyOfReceipt(r) {
-  const p = parseBs(r.date_bs);
-  if (!p) return null;
-  return p.mo >= 4 ? p.y : p.y - 1;
-}
-
-function fyLabel(fy) {
-  return 'FY ' + fy + '/' + String(fy + 1).slice(2);
-}
-
-function bsLabel(bs) {
-  const p = parseBs(bs);
-  if (!p) return '';
-  return p.d + ' ' + BS_MONTHS[p.mo - 1] + ' ' + p.y;
-}
-
-function adLabel(ad) {
-  if (!ad) return '';
-  const d = new Date(ad + 'T00:00:00');
-  if (Number.isNaN(d.getTime())) return ad;
-  return d.toLocaleDateString('en-GB', {
-    day: 'numeric', month: 'short', year: 'numeric',
-  });
-}
-
-/* Same date line as the Laravel receipts page: BS first, AD after. */
-function dateLabel(r) {
-  const bs = bsLabel(r.date_bs);
-  const ad = adLabel(r.date_ad);
-  if (bs && ad) return bs + ' (' + ad + ')';
-  return bs || ad || '—';
+  return fyOfBs(r.date_bs);
 }
 
 /* The four groups of the Laravel receipts register, from the API's
@@ -151,7 +103,7 @@ export default function Receipts({ data, meta, apiBase }) {
                           <td>{receiptNumber(r)}</td>
                           <td>{r.covers || '—'}</td>
                           <td className="text-right">{money(r.amount_npr)}</td>
-                          <td>{dateLabel(r)}</td>
+                          <td>{dateLabel(r.date_ad, r.date_bs)}</td>
                           <td>
                             {apiBase ? (
                               <a

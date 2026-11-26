@@ -124,6 +124,7 @@ export default function App() {
   const [clients, setClients] = useState([]);
   const [openInvoices, setOpenInvoices] = useState([]);
   const [sections, setSections] = useState({});
+  const [invoicesRefresh, setInvoicesRefresh] = useState(0);
   const [verifiedAt, setVerifiedAt] = useState('');
   const [dashSource, setDashSource] = useState('');
 
@@ -151,15 +152,9 @@ export default function App() {
         const d = await api('/bank');
         setSections((s) => ({ ...s, bank: d }));
       } else if (key === 'invoices') {
-        const [s, list] = await Promise.all([
-          api('/invoices/summary'),
-          api('/invoices?open_only=1&per_page=50'),
-        ]);
-        setSections((prev) => ({
-          ...prev,
-          invoices: s,
-          openList: list && list.data ? list.data : [],
-        }));
+        /* The Invoices tab loads its own list; a refresh just tells
+           it to fetch again (Reload button, or after a write). */
+        setInvoicesRefresh((n) => n + 1);
       } else if (key === 'reports') {
         const d = await api('/reports');
         setSections((s) => ({ ...s, reports: d }));
@@ -196,17 +191,16 @@ export default function App() {
     }
   }
 
-  /* A write happened: the open-invoice lists and the invoice and
-     receipt sections are stale — refresh the pickers and drop the
-     cached invoice/receipt data. */
+  /* A write happened: the open-invoice pickers and the invoice and
+     receipt sections are stale — refresh the pickers and tell the
+     Invoices and Receipts tabs to fetch again. */
   function handleWrote() {
     setSections((s) => {
       const next = { ...s };
-      delete next.invoices;
-      delete next.openList;
       delete next.receipts;
       return next;
     });
+    setInvoicesRefresh((n) => n + 1);
     loadOpenInvoices();
   }
 
@@ -272,8 +266,8 @@ export default function App() {
     setActiveTab(key);
     if (!signedIn) return;
     if (key === 'billing') { loadSection('billing'); return; }
-    const loadedKey = key === 'invoices' ? 'invoices' : key;
-    if (!sections[loadedKey]) loadSection(key);
+    if (key === 'invoices') return; /* the tab loads its own list */
+    if (!sections[key]) loadSection(key);
   }
 
   /* While the session is being checked, show nothing but a loader —
@@ -336,7 +330,12 @@ export default function App() {
                     {activeTab === 'tax' && <Tax data={sections.tax} />}
                     {activeTab === 'bank' && <Bank data={sections.bank} />}
                     {activeTab === 'invoices' && (
-                      <Invoices summary={sections.invoices} openList={sections.openList} />
+                      <Invoices
+                        api={api}
+                        meta={meta}
+                        apiBase={authRef.current.base}
+                        refreshKey={invoicesRefresh}
+                      />
                     )}
                     {activeTab === 'receipts' && (
                       <Receipts data={sections.receipts} meta={meta} apiBase={authRef.current.base} />
