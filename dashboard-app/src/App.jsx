@@ -134,8 +134,8 @@ export default function App() {
   const [ledgerRefresh, setLedgerRefresh] = useState(0);
   const [rulesRefresh, setRulesRefresh] = useState(0);
   /* A billing rule picked for "Issue invoice" — the Billing form
-     opens with the rule's client, service, amount and treatment
-     filled in, all editable. */
+     opens with the rule's client, service, amount, treatment, due
+     date and domain filled in, all editable. */
   const [billingPrefill, setBillingPrefill] = useState(null);
   const [fy, setFy] = useState('');
 
@@ -246,9 +246,10 @@ export default function App() {
   }
 
   /* "Issue invoice" from a billing rule: open the Billing tab with
-     the rule's client, service, amount and treatment filled in. */
-  function issueInvoiceFromRule(rule, clientName) {
-    setBillingPrefill({ clientId: rule.client_id, clientName, rule });
+     the rule's client, service, amount, treatment, due date and
+     domain filled in. */
+  function issueInvoiceFromRule(rule, clientName, clientDomain) {
+    setBillingPrefill({ clientId: rule.client_id, clientName, clientDomain, rule });
     selectTab('billing');
   }
 

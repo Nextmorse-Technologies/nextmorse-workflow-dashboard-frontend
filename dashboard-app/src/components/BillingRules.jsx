@@ -8,9 +8,10 @@ import { dateLabel } from '../dates.js';
    come from the Active list the app already loads, plus one fetch
    each for any rule whose client is not Active. The page has no
    fiscal-year filter, so this tab is all-years. */
-export default function BillingRules({ api, clients, refreshKey, onIssueInvoice, initialRules, initialClientNames }) {
+export default function BillingRules({ api, clients, refreshKey, onIssueInvoice, initialRules, initialClientNames, initialClientDomains }) {
   const [rules, setRules] = useState(initialRules || null);
   const [clientNames, setClientNames] = useState(initialClientNames || {});
+  const [clientDomains, setClientDomains] = useState(initialClientDomains || {});
   const [loading, setLoading] = useState(!initialRules);
   const [loadError, setLoadError] = useState('');
 
@@ -24,17 +25,21 @@ export default function BillingRules({ api, clients, refreshKey, onIssueInvoice,
         const resp = await api('/billing-rules?per_page=200');
         const rows = (resp && resp.data) || [];
         const known = {};
-        (clients || []).forEach((c) => { known[c.id] = c.name; });
+        const knownDomains = {};
+        (clients || []).forEach((c) => { known[c.id] = c.name; if (c.domain) knownDomains[c.id] = c.domain; });
         const missing = [...new Set(rows.map((r) => r.client_id).filter((id) => id != null && known[id] === undefined))];
         const fetched = {};
+        const fetchedDomains = {};
         await Promise.all(missing.map(async (id) => {
           try {
             const one = await api('/clients/' + id);
             if (one && one.data && one.data.name) fetched[id] = one.data.name;
+            if (one && one.data && one.data.domain) fetchedDomains[id] = one.data.domain;
           } catch (e) { /* leave unknown — shown as — */ }
         }));
         if (cancelled) return;
         setClientNames({ ...known, ...fetched });
+        setClientDomains({ ...knownDomains, ...fetchedDomains });
         setRules(rows);
       } catch (err) {
         if (!cancelled) setLoadError(friendlyError(err));
@@ -88,7 +93,7 @@ export default function BillingRules({ api, clients, refreshKey, onIssueInvoice,
                       <button
                         type="button"
                         className="btn btn-sm btn-primary"
-                        onClick={() => onIssueInvoice && onIssueInvoice(r, clientNames[r.client_id] || '')}
+                        onClick={() => onIssueInvoice && onIssueInvoice(r, clientNames[r.client_id] || '', clientDomains[r.client_id] || '')}
                       >
                         Issue invoice
                       </button>

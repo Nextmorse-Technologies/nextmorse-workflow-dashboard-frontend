@@ -12,14 +12,19 @@ function FieldError({ msg }) {
 }
 
 /* The invoice form's fill from one billing rule: the service, amount
-   and treatment the rule carries. When the rule is among the
-   client's active rules it is also the selected rule in the Service
-   dropdown; otherwise (inactive, or a no-billing rule) the service
-   is free text and only the fields fill. The amount stays blank when
-   the rule has none (e.g. a cost-share on actuals). */
-export function prefillFromRule(rule, activeRules) {
-  if (!rule) return { ruleId: '', service: '', amount: '', treatment: 'vat_tds' };
+   and treatment the rule carries, plus the due date (the rule's next
+   due date) and the domain — named in the service text when the rule
+   is for one domain, else the client's domain. When the rule is
+   among the client's active rules it is also the selected rule in
+   the Service dropdown; otherwise (inactive, or a no-billing rule)
+   the service is free text and only the fields fill. The amount
+   stays blank when the rule has none (e.g. a cost-share on actuals). */
+export function prefillFromRule(rule, activeRules, clientDomain) {
+  if (!rule) {
+    return { ruleId: '', service: '', amount: '', treatment: 'vat_tds', dueDate: '', domain: '' };
+  }
   const inDropdown = (activeRules || []).some((r) => String(r.id) === String(rule.id));
+  const named = (rule.service || '').match(/[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}/i);
   return {
     ruleId: inDropdown ? String(rule.id) : '',
     service: rule.service || '',
@@ -27,6 +32,8 @@ export function prefillFromRule(rule, activeRules) {
       ? String(rule.amount_npr)
       : '',
     treatment: rule.treatment || 'vat_tds',
+    dueDate: rule.next_due_ad || '',
+    domain: named ? named[0] : (clientDomain || ''),
   };
 }
 
@@ -34,11 +41,11 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
   const [invClient, setInvClient] = useState('');
   /* The client picked by an "Issue invoice" button (the Billing rules
      tab) when that client is not Active — the Client dropdown only
-     lists Active clients, so the name is kept here to show the picked
-     client as a one-off option. */
-  const [prefillClientName, setPrefillClientName] = useState('');
+     lists Active clients, so the name and domain are kept here to show
+     the picked client as a one-off option and to fill the domain. */
+  const [prefillClient, setPrefillClient] = useState(null);
   /* A rule waiting to fill the form once its client's rules load. */
-  const [pendingRule, setPendingRule] = useState(null);
+  const [pendingPrefill, setPendingPrefill] = useState(null);
   /* The selected client's billing rules (their services). Loaded from
      GET /billing-rules?client_id=…&status=active when the client
      changes; the service, amount and treatment fill in from the rule. */
@@ -111,16 +118,22 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
     setInvService('');
     setInvAmount('');
     setInvTreatment('vat_tds');
+    setInvDueDate('');
+    setInvDomain('');
     loadRules(clientId);
   }
 
   function handleRuleChange(ruleId) {
     setSelectedRule(ruleId);
     const rule = rules.find((r) => String(r.id) === String(ruleId)) || null;
-    const fill = prefillFromRule(rule, rules);
+    const clientDomain = (clients || []).find((c) => String(c.id) === String(invClient))?.domain ||
+      (prefillClient && prefillClient.domain) || '';
+    const fill = prefillFromRule(rule, rules, clientDomain);
     setInvService(fill.service);
     setInvAmount(fill.amount);
     setInvTreatment(fill.treatment);
+    setInvDueDate(fill.dueDate);
+    setInvDomain(fill.domain);
   }
 
   /* "Issue invoice" from the Billing rules tab: the rule arrives as a
@@ -128,25 +141,29 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
      load — then fill the form from the rule once they are in. */
   useEffect(() => {
     if (!prefill || !prefill.rule) return;
-    setPrefillClientName(prefill.clientName || '');
-    setPendingRule(prefill.rule);
+    setPrefillClient({ name: prefill.clientName || '', domain: prefill.clientDomain || '' });
+    setPendingPrefill(prefill);
     handleClientChange(String(prefill.clientId));
     // handleClientChange is stable enough for this one-shot effect.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prefill]);
 
   useEffect(() => {
-    if (!pendingRule || rulesLoading) return;
-    const fill = prefillFromRule(pendingRule, rules);
+    if (!pendingPrefill || rulesLoading) return;
+    const clientDomain = pendingPrefill.clientDomain ||
+      (clients || []).find((c) => String(c.id) === String(pendingPrefill.clientId))?.domain || '';
+    const fill = prefillFromRule(pendingPrefill.rule, rules, clientDomain);
     setSelectedRule(fill.ruleId);
     setInvService(fill.service);
     setInvAmount(fill.amount);
     setInvTreatment(fill.treatment);
-    setPendingRule(null);
+    setInvDueDate(fill.dueDate);
+    setInvDomain(fill.domain);
+    setPendingPrefill(null);
     if (onPrefillApplied) onPrefillApplied();
     // Runs when the rules for the prefilled client finish loading.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rules, rulesLoading, pendingRule]);
+  }, [rules, rulesLoading, pendingPrefill]);
 
   const selectedOpenInvoice = openInvoices.find(
     (inv) => String(inv.id) === String(payInvoiceId),
@@ -280,12 +297,12 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
                     id="invClient"
                     className="form-control"
                     value={invClient}
-                    onChange={(e) => { setPrefillClientName(''); handleClientChange(e.target.value); }}
+                    onChange={(e) => { setPrefillClient(null); handleClientChange(e.target.value); }}
                   >
                     <option value="">Pick a client…</option>
-                    {invClient && prefillClientName &&
+                    {invClient && prefillClient && prefillClient.name &&
                       !activeClients.some((c) => String(c.id) === String(invClient)) && (
-                      <option value={invClient}>{prefillClientName}</option>
+                      <option value={invClient}>{prefillClient.name}</option>
                     )}
                     {activeClients.length ? (
                       activeClients.map((c) => (
