@@ -1,0 +1,461 @@
+import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  SS_BASE,
+  SS_TOKEN,
+  createApiClient,
+  friendlyError,
+} from './api.js';
+import Overview from './components/Overview.jsx';
+import Tax from './components/Tax.jsx';
+import Bank from './components/Bank.jsx';
+import Invoices from './components/Invoices.jsx';
+import Reports from './components/Reports.jsx';
+import Billing from './components/Billing.jsx';
+
+const TABS = [
+  { key: 'overview', label: 'Overview' },
+  { key: 'tax', label: 'Tax' },
+  { key: 'bank', label: 'Bank' },
+  { key: 'invoices', label: 'Invoices' },
+  { key: 'reports', label: 'Reports' },
+  { key: 'billing', label: 'Billing' },
+];
+
+function Header() {
+  const [navOpen, setNavOpen] = useState(false);
+  return (
+    <header className="header">
+      <div className="container">
+        <div className="row">
+          <div className="col-sm-12">
+            <nav className="navbar navbar-static-top navbar-expand-lg">
+              <button
+                type="button"
+                className="navbar-toggler"
+                aria-label="Toggle navigation"
+                onClick={() => setNavOpen((o) => !o)}
+              >
+                <i className="fas fa-align-left"></i>
+              </button>
+              <a className="navbar-brand" href="/index.html">
+                <img className="img-fluid" src="/images/logo.svg" alt="logo" />
+              </a>
+              <div className={'navbar-collapse collapse' + (navOpen ? ' show' : '')}>
+                <ul className="nav navbar-nav">
+                  <li className="nav-item">
+                    <a className="nav-link" href="/index.html">Home</a>
+                  </li>
+                  <li className="nav-item">
+                    <a href="/index.html#service" className="nav-link">Services</a>
+                  </li>
+                  <li className="nav-item">
+                    <a href="/index.html#about-us" className="nav-link">Company</a>
+                  </li>
+                  <li className="nav-item">
+                    <a href="/index.html#contact" className="nav-link">Contact</a>
+                  </li>
+                </ul>
+              </div>
+            </nav>
+          </div>
+        </div>
+      </div>
+    </header>
+  );
+}
+
+function Footer() {
+  return (
+    <footer className="footer space-ptb bg-light mt-n5">
+      <div className="footer-bottom mt-5">
+        <div className="container">
+          <div className="row">
+            <div className="col-lg-12 text-center">
+              <ul className="list-unstyled mb-3 mb-md-5 social-icon social-icon-lg">
+                <li><a href="#"><i className="fab fa-facebook-f fa-2x"></i></a></li>
+                <li>
+                  <a href="https://www.linkedin.com/company/nextmorse-technologies?originalSubdomain=nl">
+                    <i className="fab fa-linkedin-in fa-2x"></i>
+                  </a>
+                </li>
+              </ul>
+              <p className="mb-0 text-dark">
+                &copy;Copyright 2022 <a href="/index.html">Nextmorse</a> All Rights Reserved
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </footer>
+  );
+}
+
+export default function App() {
+  const [baseInput, setBaseInput] = useState('');
+  const [tokenInput, setTokenInput] = useState('');
+  const [signedIn, setSignedIn] = useState(false);
+  const [signinError, setSigninError] = useState('');
+  const [signinStatus, setSigninStatus] = useState(
+    'Enter the API base URL and your token, then load.',
+  );
+  const [loading, setLoading] = useState(false);
+  const [dashStatus, setDashStatus] = useState('');
+  const [dashError, setDashError] = useState('');
+  const [activeTab, setActiveTab] = useState('overview');
+  const [meta, setMeta] = useState(null);
+  const [clients, setClients] = useState([]);
+  const [openInvoices, setOpenInvoices] = useState([]);
+  const [sections, setSections] = useState({});
+  const [verifiedAt, setVerifiedAt] = useState('');
+  const [dashSource, setDashSource] = useState('');
+
+  const authRef = useRef({ base: '', token: '' });
+  const apiClient = useMemo(
+    () => createApiClient(() => authRef.current),
+    [],
+  );
+  const api = apiClient.api;
+
+  /* Section loaders (lazy: each section loads on first view). */
+  async function loadSection(key) {
+    setDashError('');
+    setDashStatus('Loading ' + key + '…');
+    try {
+      if (key === 'overview') {
+        const d = await api('/dashboard');
+        setSections((s) => ({ ...s, overview: d }));
+        if (d && d.verified_at) setVerifiedAt(d.verified_at);
+        if (d && d.source) setDashSource('Source: ' + d.source);
+      } else if (key === 'tax') {
+        const d = await api('/tax');
+        setSections((s) => ({ ...s, tax: d }));
+      } else if (key === 'bank') {
+        const d = await api('/bank');
+        setSections((s) => ({ ...s, bank: d }));
+      } else if (key === 'invoices') {
+        const [s, list] = await Promise.all([
+          api('/invoices/summary'),
+          api('/invoices?open_only=1&per_page=50'),
+        ]);
+        setSections((prev) => ({
+          ...prev,
+          invoices: s,
+          openList: list && list.data ? list.data : [],
+        }));
+      } else if (key === 'reports') {
+        const d = await api('/reports');
+        setSections((s) => ({ ...s, reports: d }));
+      } else if (key === 'billing') {
+        await Promise.all([loadClients(), loadOpenInvoices()]);
+      }
+      setDashStatus('Loaded ' + key + ' · ' + new Date().toLocaleTimeString());
+    } catch (err) {
+      setDashError(friendlyError(err));
+      setDashStatus('Could not load ' + key + '.');
+    }
+  }
+
+  async function loadClients() {
+    try {
+      const resp = await api('/clients?per_page=200');
+      setClients((resp && resp.data) || []);
+    } catch (err) {
+      setDashError(friendlyError(err));
+    }
+  }
+
+  async function loadOpenInvoices() {
+    try {
+      const resp = await api('/invoices?open_only=1&per_page=200');
+      setOpenInvoices((resp && resp.data) || []);
+    } catch (err) {
+      setDashError(friendlyError(err));
+    }
+  }
+
+  /* A write happened: the open-invoice lists and the invoice sections
+     are stale — refresh the pickers and drop the cached invoice data. */
+  function handleWrote() {
+    setSections((s) => {
+      const next = { ...s };
+      delete next.invoices;
+      delete next.openList;
+      return next;
+    });
+    loadOpenInvoices();
+  }
+
+  async function signIn() {
+    setSigninError('');
+    const base = baseInput.trim().replace(/\/+$/, '');
+    const token = tokenInput.trim();
+    if (!base) {
+      setSigninError('Enter the API base URL first — e.g. the Render dashboard address.');
+      return;
+    }
+    if (!base.startsWith('http://') && !base.startsWith('https://')) {
+      setSigninError('Enter a full API base URL starting with https://');
+      return;
+    }
+    if (!token) {
+      setSigninError('Paste your API token first.');
+      return;
+    }
+    authRef.current = { base, token };
+    try {
+      sessionStorage.setItem(SS_BASE, base);
+      sessionStorage.setItem(SS_TOKEN, token);
+    } catch (e) { /* private mode: keep going without saving */ }
+
+    setSigninStatus('Loading…');
+    setLoading(true);
+    try {
+      const resp = await api('/meta');
+      setMeta((resp && resp.data) || null);
+      const d = await api('/dashboard');
+      setSections((s) => ({ ...s, overview: d }));
+      if (d && d.verified_at) setVerifiedAt(d.verified_at);
+      if (d && d.source) setDashSource('Source: ' + d.source);
+      setSignedIn(true);
+      setSigninStatus('Loaded. Click Reload to refresh.');
+      loadClients();
+      loadOpenInvoices();
+    } catch (err) {
+      setSigninError(friendlyError(err));
+      setSigninStatus('Not loaded yet.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function signOut() {
+    try {
+      sessionStorage.removeItem(SS_BASE);
+      sessionStorage.removeItem(SS_TOKEN);
+    } catch (e) { /* ignore */ }
+    authRef.current = { base: '', token: '' };
+    setMeta(null);
+    setClients([]);
+    setOpenInvoices([]);
+    setSections({});
+    setTokenInput('');
+    setSigninError('');
+    setDashError('');
+    setSigninStatus('Signed out. Enter the API base URL and your token, then load.');
+    setDashStatus('');
+    setVerifiedAt('');
+    setDashSource('');
+    setSignedIn(false);
+  }
+
+  /* Restore a tab session (token + base live in sessionStorage only). */
+  useEffect(() => {
+    let savedBase = null;
+    let savedToken = null;
+    try {
+      savedBase = sessionStorage.getItem(SS_BASE);
+      savedToken = sessionStorage.getItem(SS_TOKEN);
+    } catch (e) { /* private mode */ }
+    if (savedBase) setBaseInput(savedBase);
+    if (savedToken) setTokenInput(savedToken);
+    if (savedBase && savedToken) {
+      authRef.current = { base: savedBase, token: savedToken };
+      setSigninStatus('Loading…');
+      setLoading(true);
+      api('/meta')
+        .then((resp) => {
+          setMeta((resp && resp.data) || null);
+          return api('/dashboard');
+        })
+        .then((d) => {
+          setSections((s) => ({ ...s, overview: d }));
+          if (d && d.verified_at) setVerifiedAt(d.verified_at);
+          if (d && d.source) setDashSource('Source: ' + d.source);
+          setSignedIn(true);
+          setSigninStatus('Loaded. Click Reload to refresh.');
+          loadClients();
+          loadOpenInvoices();
+        })
+        .catch((err) => {
+          setSigninError(friendlyError(err));
+          setSigninStatus('Not loaded yet.');
+        })
+        .finally(() => setLoading(false));
+    }
+    // Run once on mount; api/loadClients/loadOpenInvoices are stable enough.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function selectTab(key) {
+    setActiveTab(key);
+    if (!signedIn) return;
+    if (key === 'billing') { loadSection('billing'); return; }
+    const loadedKey = key === 'invoices' ? 'invoices' : key;
+    if (!sections[loadedKey]) loadSection(key);
+  }
+
+  return (
+    <>
+      <Header />
+      <section className="space-ptb">
+        <div className="container">
+          <div className="row justify-content-center pb-3 pb-md-4">
+            <div className="col-lg-10">
+              <div className="section-title text-center">
+                <h2>Dashboard</h2>
+                <p className="lead">
+                  Nextmorse Technologies Pvt. Ltd. — figures, tax, bank, invoices and
+                  billing, live from the unified API.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Sign in: API address + token. Typed in, kept in this tab only. */}
+          <div className="row justify-content-center">
+            <div className="col-lg-10">
+              <div className="card mb-4">
+                <div className="card-body">
+                  <h5 className="card-title">Connect to the API</h5>
+                  <p className="text-muted small">
+                    Type the API base URL and your API token. Both are kept in this
+                    tab only (sessionStorage) and are sent only to the base URL you
+                    set, as an Authorization header. Nothing is written into this page.
+                  </p>
+                  <div className="form-row">
+                    <div className="col-md-5 mb-3">
+                      <label htmlFor="apiBase">API base URL</label>
+                      <input
+                        id="apiBase"
+                        className="form-control"
+                        type="url"
+                        placeholder="https://nextmorse-dashboard.onrender.com"
+                        autoComplete="off"
+                        value={baseInput}
+                        onChange={(e) => setBaseInput(e.target.value)}
+                      />
+                      <small className="form-text text-muted">
+                        The API currently runs on the Render dashboard; it will move to
+                        poudelbijaya.com.np.
+                      </small>
+                    </div>
+                    <div className="col-md-4 mb-3">
+                      <label htmlFor="apiToken">API token</label>
+                      <input
+                        id="apiToken"
+                        className="form-control"
+                        type="password"
+                        placeholder="Paste your API token"
+                        autoComplete="off"
+                        value={tokenInput}
+                        onChange={(e) => setTokenInput(e.target.value)}
+                      />
+                    </div>
+                    <div className="col-md-3 mb-3 d-flex align-items-end">
+                      <button
+                        className="btn btn-primary btn-block"
+                        type="button"
+                        onClick={signIn}
+                        disabled={loading}
+                      >
+                        {signedIn ? 'Reload dashboard' : 'Load dashboard'}
+                      </button>
+                    </div>
+                  </div>
+                  {signinError && (
+                    <div className="alert alert-danger" role="alert">{signinError}</div>
+                  )}
+                  <div className="d-flex justify-content-between align-items-center">
+                    <small className="text-muted">{signinStatus}</small>
+                    {signedIn && (
+                      <button
+                        className="btn btn-outline-secondary btn-sm"
+                        type="button"
+                        onClick={signOut}
+                      >
+                        Sign out
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Dashboard sections (shown after sign in) */}
+          {signedIn && (
+            <div className="row justify-content-center">
+              <div className="col-lg-12">
+                <div className="d-flex justify-content-between align-items-center mb-3">
+                  <small className="text-muted">{dashStatus}</small>
+                  <button
+                    className="btn btn-outline-secondary btn-sm"
+                    type="button"
+                    onClick={() => loadSection(activeTab)}
+                  >
+                    Reload
+                  </button>
+                </div>
+                {dashError && (
+                  <div className="alert alert-danger" role="alert">{dashError}</div>
+                )}
+
+                <ul className="nav nav-tabs" role="tablist">
+                  {TABS.map((t) => (
+                    <li className="nav-item" key={t.key}>
+                      <a
+                        className={'nav-link' + (activeTab === t.key ? ' active' : '')}
+                        href={'#tab-' + t.key}
+                        role="tab"
+                        aria-selected={activeTab === t.key}
+                        onClick={(e) => { e.preventDefault(); selectTab(t.key); }}
+                      >
+                        {t.label}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+
+                <div className="tab-content pt-4">
+                  <div className="tab-pane fade show active" role="tabpanel">
+                    {activeTab === 'overview' && <Overview data={sections.overview} />}
+                    {activeTab === 'tax' && <Tax data={sections.tax} />}
+                    {activeTab === 'bank' && <Bank data={sections.bank} />}
+                    {activeTab === 'invoices' && (
+                      <Invoices summary={sections.invoices} openList={sections.openList} />
+                    )}
+                    {activeTab === 'reports' && <Reports data={sections.reports} />}
+                    {activeTab === 'billing' && (
+                      <Billing
+                        api={api}
+                        clients={clients}
+                        openInvoices={openInvoices}
+                        meta={meta}
+                        onWrote={handleWrote}
+                      />
+                    )}
+                  </div>
+                </div>
+
+                <hr />
+                <p className="text-muted small">
+                  Data from the Nextmorse unified API &middot; verified at{' '}
+                  <span>{verifiedAt}</span> &middot; <span>{dashSource}</span>
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+      </section>
+      <Footer />
+      <div
+        id="back-to-top"
+        className="back-to-top"
+        role="button"
+        onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+      >
+        up
+      </div>
+    </>
+  );
+}
