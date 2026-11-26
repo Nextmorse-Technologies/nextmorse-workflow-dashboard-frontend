@@ -63,8 +63,10 @@ export function receivableInvoices(openInvoices) {
    client has no rules, or when "Other" was picked to type a new
    service instead of one of the listed rules. */
 export const SERVICE_OTHER = '__other';
+export const SERVICE_ATTACH = '__attach';
 export function serviceFieldMode({ hasClient, rulesLoading, rules, selectedRule }) {
   if (hasClient && rulesLoading) return 'loading';
+  if (hasClient && rules.length > 0 && selectedRule === SERVICE_ATTACH) return 'attach';
   if (hasClient && rules.length > 0 && selectedRule !== SERVICE_OTHER) return 'select';
   return 'text';
 }
@@ -123,6 +125,10 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
      such a client is picked. */
   const [allRules, setAllRules] = useState([]);
   const [allRulesLoaded, setAllRulesLoaded] = useState(false);
+  const [allRulesLoading, setAllRulesLoading] = useState(false);
+  /* Whether the service was filled by attaching an existing rule —
+     the amount note shows for it, as for a picked rule. */
+  const [serviceAttached, setServiceAttached] = useState(false);
   /* Names of rule owners that are not Active clients (the client
      list only carries Active ones) — fetched per id, like the
      Billing rules tab does. */
@@ -246,6 +252,7 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
   async function loadAllRules() {
     if (allRulesLoaded) return;
     setAllRulesLoaded(true);
+    setAllRulesLoading(true);
     try {
       const resp = await api('/billing-rules?per_page=200');
       const rows = (resp && resp.data) || [];
@@ -265,6 +272,8 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
       }
     } catch (err) {
       /* Attaching stays unavailable; the free-text field still works. */
+    } finally {
+      setAllRulesLoading(false);
     }
   }
 
@@ -279,6 +288,23 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
     label: r.service + ' — ' + ruleOwnerName(r.client_id) + ' — ' + money(r.amount_npr),
   }));
 
+  /* The attach dropdown, shared by the no-rules text field and the
+     attach mode of the rules dropdown. Picking one fills the service
+     from that rule. */
+  const attachSelect = (
+    <select
+      className="form-control mb-2"
+      value=""
+      onChange={(e) => { if (e.target.value) handleAttach(e.target.value); }}
+      aria-label="Attach an existing service or AMC"
+    >
+      <option value="">Attach an existing service or AMC…</option>
+      {attachOptions.map((o) => (
+        <option key={o.id} value={o.id}>{o.label}</option>
+      ))}
+    </select>
+  );
+
   function handleAttach(ruleId) {
     const rule = (allRules || []).find((r) => String(r.id) === String(ruleId)) || null;
     const clientDomain = (clients || []).find((c) => String(c.id) === String(invClient))?.domain ||
@@ -291,10 +317,15 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
        not this client's. */
     setInvDueDate('');
     setInvDomain(fill.domain);
+    /* Show the filled service as editable text, with the way back to
+       the client's own list. */
+    setSelectedRule(SERVICE_OTHER);
+    setServiceAttached(true);
   }
 
   function handleClientChange(clientId) {
     setInvClient(clientId);
+    setServiceAttached(false);
     setInvService('');
     setInvAmount('');
     setInvTreatment('vat_tds');
@@ -306,6 +337,7 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
   function handleRuleChange(ruleId) {
     const clientDomain = (clients || []).find((c) => String(c.id) === String(invClient))?.domain ||
       (prefillClient && prefillClient.domain) || '';
+    setServiceAttached(false);
     if (ruleId === SERVICE_OTHER) {
       /* A new service, not one of the listed rules: clear the
          rule-filled fields and let the user type. The domain stays
@@ -316,6 +348,19 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
       setInvTreatment('vat_tds');
       setInvDueDate('');
       setInvDomain(clientDomain);
+      return;
+    }
+    if (ruleId === SERVICE_ATTACH) {
+      /* Attach a service from another client instead: clear the
+         rule-filled fields, fetch every rule, and show the attach
+         list. The domain stays the client's own domain. */
+      setSelectedRule(SERVICE_ATTACH);
+      setInvService('');
+      setInvAmount('');
+      setInvTreatment('vat_tds');
+      setInvDueDate('');
+      setInvDomain(clientDomain);
+      loadAllRules();
       return;
     }
     setSelectedRule(ruleId);
@@ -413,6 +458,7 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
       setInvService('');
       setInvAmount('');
       setSelectedRule('');
+      setServiceAttached(false);
       setInvDomain('');
       setInvNotes('');
       onWrote();
@@ -652,23 +698,39 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
                             : ''}
                         </option>
                       ))}
+                      <option value={SERVICE_ATTACH}>Attach an existing service or AMC…</option>
                       <option value={SERVICE_OTHER}>Other — type a new service</option>
                     </select>
+                  ) : serviceFieldMode({ hasClient: !!invClient, rulesLoading, rules, selectedRule }) === 'attach' ? (
+                    <>
+                      {allRulesLoading ? (
+                        <input
+                          id="invService"
+                          className="form-control"
+                          type="text"
+                          placeholder="Loading services…"
+                          disabled
+                          value=""
+                          readOnly
+                        />
+                      ) : attachOptions.length > 0 ? (
+                        attachSelect
+                      ) : (
+                        <small className="form-text text-muted">
+                          No existing services could be loaded.{' '}
+                          <button
+                            type="button"
+                            className="btn btn-link btn-sm p-0 align-baseline"
+                            onClick={() => handleRuleChange('')}
+                          >
+                            Back to services
+                          </button>
+                        </small>
+                      )}
+                    </>
                   ) : (
                     <>
-                      {invClient && !rulesLoading && rules.length === 0 && attachOptions.length > 0 && (
-                        <select
-                          className="form-control mb-2"
-                          value=""
-                          onChange={(e) => { if (e.target.value) handleAttach(e.target.value); }}
-                          aria-label="Attach an existing service or AMC"
-                        >
-                          <option value="">Attach an existing service or AMC…</option>
-                          {attachOptions.map((o) => (
-                            <option key={o.id} value={o.id}>{o.label}</option>
-                          ))}
-                        </select>
-                      )}
+                      {invClient && !rulesLoading && rules.length === 0 && attachOptions.length > 0 && attachSelect}
                       <input
                         id="invService"
                         className="form-control"
@@ -720,7 +782,7 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
                       value={invAmount}
                       onChange={(e) => setInvAmount(e.target.value)}
                     />
-                    {selectedRule && selectedRule !== SERVICE_OTHER && (
+                    {((selectedRule && selectedRule !== SERVICE_OTHER) || serviceAttached) && (
                       <small className="form-text text-muted">
                         Filled from the billing rule — change it if this
                         invoice differs.
