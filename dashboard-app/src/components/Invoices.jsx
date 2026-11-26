@@ -65,7 +65,7 @@ export function statusTitle(inv) {
   return '';
 }
 
-function statusBadge(status) {
+export function statusBadge(status) {
   if (status === 'Paid') return 'badge-success';
   if (status === 'Open') return 'badge-warning';
   if (status === 'Due') return 'badge-danger';
@@ -88,7 +88,7 @@ const GROUPS = [
   { key: 'other', heading: 'Other invoices' },
 ];
 
-function GroupTable({ items, apiBase }) {
+export function GroupTable({ items, apiBase }) {
   return (
     <div className="table-responsive">
       <table className="table table-striped table-sm bg-white">

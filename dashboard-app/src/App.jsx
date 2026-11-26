@@ -10,6 +10,7 @@ import Tax from './components/Tax.jsx';
 import Bank from './components/Bank.jsx';
 import Invoices from './components/Invoices.jsx';
 import Receipts from './components/Receipts.jsx';
+import PettyCash from './components/PettyCash.jsx';
 import Reports from './components/Reports.jsx';
 import Billing from './components/Billing.jsx';
 
@@ -19,6 +20,7 @@ const TABS = [
   { key: 'bank', label: 'Bank' },
   { key: 'invoices', label: 'Invoices' },
   { key: 'receipts', label: 'Receipts' },
+  { key: 'petty', label: 'Petty cash' },
   { key: 'reports', label: 'Reports' },
   { key: 'billing', label: 'Billing' },
 ];
@@ -125,6 +127,7 @@ export default function App() {
   const [openInvoices, setOpenInvoices] = useState([]);
   const [sections, setSections] = useState({});
   const [invoicesRefresh, setInvoicesRefresh] = useState(0);
+  const [pettyRefresh, setPettyRefresh] = useState(0);
   const [verifiedAt, setVerifiedAt] = useState('');
   const [dashSource, setDashSource] = useState('');
 
@@ -155,6 +158,10 @@ export default function App() {
         /* The Invoices tab loads its own list; a refresh just tells
            it to fetch again (Reload button, or after a write). */
         setInvoicesRefresh((n) => n + 1);
+      } else if (key === 'petty') {
+        /* Same pattern as Invoices — the Petty cash tab loads its
+           own lists; a refresh tells it to fetch again. */
+        setPettyRefresh((n) => n + 1);
       } else if (key === 'reports') {
         const d = await api('/reports');
         setSections((s) => ({ ...s, reports: d }));
@@ -191,9 +198,10 @@ export default function App() {
     }
   }
 
-  /* A write happened: the open-invoice pickers and the invoice and
-     receipt sections are stale — refresh the pickers and tell the
-     Invoices and Receipts tabs to fetch again. */
+  /* A write happened: the open-invoice pickers and the invoice,
+     receipt and petty cash sections are stale — refresh the pickers
+     and tell the Invoices, Receipts and Petty cash tabs to fetch
+     again. */
   function handleWrote() {
     setSections((s) => {
       const next = { ...s };
@@ -201,6 +209,7 @@ export default function App() {
       return next;
     });
     setInvoicesRefresh((n) => n + 1);
+    setPettyRefresh((n) => n + 1);
     loadOpenInvoices();
   }
 
@@ -267,6 +276,7 @@ export default function App() {
     if (!signedIn) return;
     if (key === 'billing') { loadSection('billing'); return; }
     if (key === 'invoices') return; /* the tab loads its own list */
+    if (key === 'petty') return; /* the tab loads its own lists */
     if (!sections[key]) loadSection(key);
   }
 
@@ -339,6 +349,14 @@ export default function App() {
                     )}
                     {activeTab === 'receipts' && (
                       <Receipts data={sections.receipts} meta={meta} apiBase={authRef.current.base} />
+                    )}
+                    {activeTab === 'petty' && (
+                      <PettyCash
+                        api={api}
+                        meta={meta}
+                        apiBase={authRef.current.base}
+                        refreshKey={pettyRefresh}
+                      />
                     )}
                     {activeTab === 'reports' && <Reports data={sections.reports} />}
                     {activeTab === 'billing' && (
