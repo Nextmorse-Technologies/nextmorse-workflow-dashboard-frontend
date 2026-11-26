@@ -293,7 +293,7 @@ export default function App() {
         onReload={() => loadSection(activeTab)}
         onSignOut={signOut}
       />
-      <section className="space-ptb">
+      <section className="pt-4 pb-5">
         <div className="container">
           {/* Dashboard sections */}
           <div className="row justify-content-center">
