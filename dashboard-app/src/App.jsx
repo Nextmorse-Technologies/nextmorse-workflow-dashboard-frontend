@@ -127,6 +127,7 @@ export default function App() {
   const [sections, setSections] = useState({});
   const [invoicesRefresh, setInvoicesRefresh] = useState(0);
   const [pettyRefresh, setPettyRefresh] = useState(0);
+  const [ledgerRefresh, setLedgerRefresh] = useState(0);
   const [fy, setFy] = useState('');
 
   /* The one fiscal-year picker, like Laravel's top-bar picker: it
@@ -161,6 +162,7 @@ export default function App() {
       if (key === 'overview') {
         const d = await api('/dashboard');
         setSections((s) => ({ ...s, overview: d }));
+        setLedgerRefresh((n) => n + 1);
         if (d && d.verified_at) setVerifiedAt(d.verified_at);
         if (d && d.source) setDashSource('Source: ' + d.source);
       } else if (key === 'tax') {
@@ -222,6 +224,7 @@ export default function App() {
     });
     setInvoicesRefresh((n) => n + 1);
     setPettyRefresh((n) => n + 1);
+    setLedgerRefresh((n) => n + 1);
     loadOpenInvoices();
   }
 
@@ -365,7 +368,7 @@ export default function App() {
 
                 <div className="tab-content pt-4">
                   <div className="tab-pane fade show active" role="tabpanel">
-                    {activeTab === 'overview' && <Overview data={sections.overview} />}
+                    {activeTab === 'overview' && <Overview data={sections.overview} api={api} fy={effectiveFy} refreshKey={ledgerRefresh} />}
                     {activeTab === 'tax' && <Tax data={sections.tax} />}
                     {activeTab === 'bank' && <Bank data={sections.bank} />}
                     {activeTab === 'invoices' && (

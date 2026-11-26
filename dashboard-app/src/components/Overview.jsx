@@ -1,5 +1,6 @@
 import { money } from '../api.js';
 import Reports from './Reports.jsx';
+import Ledger from './Ledger.jsx';
 
 function FigureCard({ title, value }) {
   return (
@@ -14,7 +15,7 @@ function FigureCard({ title, value }) {
   );
 }
 
-export default function Overview({ data }) {
+export default function Overview({ data, api, fy, refreshKey }) {
   if (!data) return null;
   const f = data.figures || {};
   const at = f.all_time || {};
@@ -63,6 +64,11 @@ export default function Overview({ data }) {
           Laravel /reports page, from the same payload. */}
       <div className="mt-5">
         <Reports data={data.reports} />
+      </div>
+      {/* The ledger, after the report — the same sections as the
+          Laravel /ledger page, from the API. */}
+      <div className="mt-5">
+        <Ledger api={api} fy={fy} refreshKey={refreshKey} />
       </div>
     </>
   );
