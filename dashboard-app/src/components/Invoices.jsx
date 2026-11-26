@@ -208,7 +208,9 @@ export default function Invoices({ api, apiBase, refreshKey, fy, initialRows }) 
           </div>
           <div className="card mb-4">
             <div className="card-body">
-              <h4 className="card-title h6">Locked tax invoices</h4>
+              <h4 className="card-title h6">
+                Locked tax invoices — Subtotal: {money(groupTotal(locked))}
+              </h4>
               {locked.length ? (
                 <div className="table-responsive">
                   <table className="table table-striped table-sm bg-white">
