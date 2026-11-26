@@ -43,6 +43,27 @@ export function paidSupplierTotals(invoices, fy) {
   return rows;
 }
 
+/* The vendor bills that are paid (kind=received, status Paid),
+   grouped by supplier — the counterpart to the open bills list.
+   The Suppliers paid totals below count paid money-out invoices,
+   which never include a paid received bill, so a bill that is paid
+   would otherwise vanish from this tab entirely. Groups sort by
+   total paid, biggest first; bills inside a group newest first. */
+export function groupPaidBills(invoices, fy) {
+  const groups = {};
+  (invoices || []).forEach((inv) => {
+    if (inv.kind !== 'received' || inv.status !== 'Paid') return;
+    if (fy && fy !== 'all' && inv.fiscal_year !== fy) return;
+    const name = inv.client_name || 'Unknown';
+    if (!groups[name]) groups[name] = { name, total: 0, bills: [] };
+    groups[name].total = Math.round((groups[name].total + (Number(inv.amount_npr) || 0)) * 100) / 100;
+    groups[name].bills.push(inv);
+  });
+  return Object.values(groups)
+    .map((g) => ({ ...g, bills: g.bills.sort((a, b) => String(b.date_ad || '').localeCompare(String(a.date_ad || ''))) }))
+    .sort((a, b) => b.total - a.total);
+}
+
 export default function VendorBills({ api, refreshKey, fy, initialInvoices }) {
   const effectiveFy = fy || 'all';
   const [invoices, setInvoices] = useState(initialInvoices || null);
@@ -86,6 +107,7 @@ export default function VendorBills({ api, refreshKey, fy, initialInvoices }) {
     .sort((a, b) => String(b.date_ad || '').localeCompare(String(a.date_ad || '')));
   const owed = openBills.reduce((sum, b) => sum + (Number(b.remaining_amount_npr) || 0), 0);
   const paidRows = paidSupplierTotals(invoices, effectiveFy);
+  const paidGroups = groupPaidBills(invoices, effectiveFy);
 
   return (
     <>
@@ -126,6 +148,38 @@ export default function VendorBills({ api, refreshKey, fy, initialInvoices }) {
                 </tbody>
               </table>
             </div>
+          )}
+          <h4 className="h6 mt-3">Paid vendor bills</h4>
+          {paidGroups.length === 0 ? (
+            <p className="text-muted">No paid vendor bills{effectiveFy === 'all' ? '' : ' in ' + effectiveFy}.</p>
+          ) : (
+            paidGroups.map((g) => (
+              <div key={g.name}>
+                <h5 className="h6 mt-3">{g.name} — {money(g.total)}</h5>
+                <div className="table-responsive">
+                  <table className="table table-striped table-sm bg-white">
+                    <thead>
+                      <tr>
+                        <th>Invoice no.</th>
+                        <th>Service</th>
+                        <th className="text-right">Amount</th>
+                        <th>Paid</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {g.bills.map((b) => (
+                        <tr key={b.id}>
+                          <td>{b.invoice_number || '—'}</td>
+                          <td>{b.service}</td>
+                          <td className="text-right">{money(b.amount_npr)}</td>
+                          <td>{b.paid_date_ad || b.paid_date_bs ? dateLabel(b.paid_date_ad, b.paid_date_bs) : '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ))
           )}
           <h4 className="h6 mt-3">Owed to vendors</h4>
           <p className="text-muted">{money(owed)}</p>
