@@ -512,6 +512,9 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
           ' still to receive.');
       }
       setPayFormSuccess(lines.join(' '));
+      /* A fully paid invoice drops off the open list — clear the pick,
+         or the select would show the next invoice while none is picked. */
+      if (metaInv.status === 'Paid') setPayInvoiceId('');
       setPayAmount('');
       setPayTxnRef('');
       setPayReceiptNo('');
@@ -620,6 +623,9 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
           ' still to pay.');
       }
       setVrFormSuccess(lines.join(' '));
+      /* A fully paid bill drops off the open list — clear the pick, or
+         the select would show the next bill while none is picked. */
+      if (metaInv.status === 'Paid') setVrBillId('');
       setVrAmount('');
       setVrTxnRef('');
       setVrReceiptNo('');
@@ -880,6 +886,7 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
                     value={payInvoiceId}
                     onChange={(e) => setPayInvoiceId(e.target.value)}
                   >
+                    <option value="">Pick an open invoice…</option>
                     {receivable.length ? (
                       receivable.map((inv) => (
                         <option key={inv.id} value={inv.id}>
@@ -1116,6 +1123,7 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
                     value={vrBillId}
                     onChange={(e) => setVrBillId(e.target.value)}
                   >
+                    <option value="">Pick an open vendor bill…</option>
                     {vendorBills.length ? (
                       vendorBills.map((inv) => (
                         <option key={inv.id} value={inv.id}>
