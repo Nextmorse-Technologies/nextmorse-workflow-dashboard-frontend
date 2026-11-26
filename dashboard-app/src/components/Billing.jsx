@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   TREATMENTS_FALLBACK,
   TREATMENT_LABELS,
@@ -62,6 +62,17 @@ export function receivableInvoices(openInvoices) {
    loading placeholder, or a free-text field — the last when the
    client has no rules, or when "Other" was picked to type a new
    service instead of one of the listed rules. */
+/* The "Filled from the billing rule" note under Amount: it shows
+   when a rule filled the amount — a picked rule, or an attached one.
+   It must NOT show while the attach list is merely open (nothing
+   filled yet) or for a typed-in new service. */
+export function showRuleFilledNote({ selectedRule, serviceAttached }) {
+  return Boolean(
+    (selectedRule && selectedRule !== SERVICE_OTHER && selectedRule !== SERVICE_ATTACH) ||
+    serviceAttached,
+  );
+}
+
 export const SERVICE_OTHER = '__other';
 export const SERVICE_ATTACH = '__attach';
 export function serviceFieldMode({ hasClient, rulesLoading, rules, selectedRule }) {
@@ -104,6 +115,33 @@ export function attachServiceFromRule(rule, clientDomain) {
   };
 }
 
+/* One line of a Create invoice form: its own picker state
+   (selectedRule), the filled service and amount, whether it came
+   from attaching, and the treatment its rule had (for the
+   mixed-treatment note). */
+export function newInvoiceLine(key) {
+  return { key, selectedRule: '', service: '', amount: '', serviceAttached: false, ruleTreatment: '' };
+}
+
+/* Join the invoice's lines into the single service text and total
+   the API takes: each line "Service (NPR amount)", joined with
+   " + " — the same shape the paper tax invoices already use
+   ("Neptravel.com + Royalnepaltours.com (2 x 2,500) + Unlimited
+   hosting Plan (1 x 10,000)"). Fully empty lines are skipped; a
+   line with a service but no amount still joins, without an amount. */
+export function joinInvoiceLines(lines) {
+  const parts = [];
+  let total = 0;
+  for (const l of lines || []) {
+    const service = (l.service || '').trim();
+    const amount = parseFloat(l.amount);
+    if (!service && !(amount > 0)) continue;
+    if (amount > 0) total += amount;
+    parts.push(amount > 0 ? service + ' (' + money(amount) + ')' : service);
+  }
+  return { service: parts.join(' + '), amount: Math.round(total * 100) / 100 };
+}
+
 export default function Billing({ api, clients, openInvoices, meta, onWrote, prefill, onPrefillApplied, vendorRefresh, initialVendorBills }) {
   const [invClient, setInvClient] = useState('');
   /* The client picked by an "Issue invoice" button (the Billing rules
@@ -119,22 +157,21 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
   const [rules, setRules] = useState([]);
   const [rulesLoading, setRulesLoading] = useState(false);
   const [rulesError, setRulesError] = useState('');
-  const [selectedRule, setSelectedRule] = useState('');
+  /* The invoice's services: one line per service, product or AMC, so
+     several can go on one invoice. Each line carries its own picker
+     state — see newInvoiceLine. */
+  const [invLines, setInvLines] = useState([newInvoiceLine(0)]);
+  const lineKeyRef = useRef(1);
   /* Every billing rule, for attaching an existing service or AMC to
      a client with no rules of their own. Loaded once, the first time
      such a client is picked. */
   const [allRules, setAllRules] = useState([]);
   const [allRulesLoaded, setAllRulesLoaded] = useState(false);
   const [allRulesLoading, setAllRulesLoading] = useState(false);
-  /* Whether the service was filled by attaching an existing rule —
-     the amount note shows for it, as for a picked rule. */
-  const [serviceAttached, setServiceAttached] = useState(false);
   /* Names of rule owners that are not Active clients (the client
      list only carries Active ones) — fetched per id, like the
      Billing rules tab does. */
   const [allRuleNames, setAllRuleNames] = useState({});
-  const [invService, setInvService] = useState('');
-  const [invAmount, setInvAmount] = useState('');
   const [invTreatment, setInvTreatment] = useState('vat_tds');
   const [invDate, setInvDate] = useState('');
   const [invDueDate, setInvDueDate] = useState('');
@@ -228,7 +265,6 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
 
   async function loadRules(clientId) {
     setRules([]);
-    setSelectedRule('');
     setRulesError('');
     if (!clientId) return;
     setRulesLoading(true);
@@ -238,9 +274,10 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
       );
       const rows = (resp && resp.data) || [];
       setRules(rows);
-      /* No rules of their own: fetch every rule once, so an existing
-         service or AMC can be attached to this client instead. */
-      if (rows.length === 0) loadAllRules();
+      /* Fetch every rule once, up front, so the attach list is ready
+         before anyone opens it — fetching it only when Attach is
+         picked made the dropdown load and jump under the click. */
+      loadAllRules();
     } catch (err) {
       /* No rules, no problem: the service stays a free-text field. */
       setRulesError(friendlyError(err));
@@ -256,20 +293,25 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
     try {
       const resp = await api('/billing-rules?per_page=200');
       const rows = (resp && resp.data) || [];
-      setAllRules(rows);
+      /* Resolve the owner names BEFORE showing the rules: setting the
+         rules first and the names a moment later re-rendered the
+         attach dropdown's options while it was open, and the browser
+         closed it and jumped to the first option. One update, final
+         labels. */
       const known = {};
       (clients || []).forEach((c) => { known[c.id] = c.name; });
       const missing = [...new Set(rows.map((r) => r.client_id))].filter((id) => !known[id]);
+      const names = {};
       if (missing.length > 0) {
-        const names = {};
         await Promise.all(missing.map(async (id) => {
           try {
             const one = await api('/clients/' + id);
             names[id] = (one && one.data && one.data.name) || '';
           } catch (err) { /* the option still shows, without a name */ }
         }));
-        setAllRuleNames(names);
       }
+      setAllRuleNames(names);
+      setAllRules(rows);
     } catch (err) {
       /* Attaching stays unavailable; the free-text field still works. */
     } finally {
@@ -289,63 +331,93 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
   }));
 
   /* The attach dropdown, shared by the no-rules text field and the
-     attach mode of the rules dropdown. Picking one fills the service
-     from that rule. */
-  const attachSelect = (
-    <select
-      className="form-control mb-2"
-      value=""
-      onChange={(e) => { if (e.target.value) handleAttach(e.target.value); }}
-      aria-label="Attach an existing service or AMC"
-    >
-      <option value="">Attach an existing service or AMC…</option>
-      {attachOptions.map((o) => (
-        <option key={o.id} value={o.id}>{o.label}</option>
-      ))}
-    </select>
-  );
+     attach mode of the rules dropdown. Picking one fills that line's
+     service from the rule. */
+  function attachSelectFor(key) {
+    return (
+      <select
+        className="form-control mb-2"
+        value=""
+        onChange={(e) => { if (e.target.value) handleLineAttach(key, e.target.value); }}
+        aria-label="Attach an existing service or AMC"
+      >
+        <option value="">Attach an existing service or AMC…</option>
+        {attachOptions.map((o) => (
+          <option key={o.id} value={o.id}>{o.label}</option>
+        ))}
+      </select>
+    );
+  }
 
-  function handleAttach(ruleId) {
+  /* One line's picker state, updated in place. */
+  function updateLine(key, patch) {
+    setInvLines((lines) => lines.map((l) => (l.key === key ? { ...l, ...patch } : l)));
+  }
+
+  /* The invoice's treatment follows the FIRST service filled from a
+     rule; later lines leave it alone, so a mixed-treatment invoice
+     is never silently re-taxed by the last pick. The dropdown stays
+     editable, and the lines disagreeing shows a note under it. */
+  function adoptTreatment(key, treatment) {
+    const anyOtherFilled = invLines.some((l) => l.key !== key && l.ruleTreatment);
+    if (!anyOtherFilled) setInvTreatment(treatment);
+  }
+
+  function addInvoiceLine() {
+    const key = lineKeyRef.current;
+    lineKeyRef.current += 1;
+    setInvLines((lines) => [...lines, newInvoiceLine(key)]);
+  }
+
+  function removeInvoiceLine(key) {
+    setInvLines((lines) => (lines.length > 1 ? lines.filter((l) => l.key !== key) : lines));
+  }
+
+  function handleLineAttach(key, ruleId) {
     const rule = (allRules || []).find((r) => String(r.id) === String(ruleId)) || null;
     const clientDomain = (clients || []).find((c) => String(c.id) === String(invClient))?.domain ||
       (prefillClient && prefillClient.domain) || '';
     const fill = attachServiceFromRule(rule, clientDomain);
-    setInvService(fill.service);
-    setInvAmount(fill.amount);
-    setInvTreatment(fill.treatment);
+    updateLine(key, {
+      service: fill.service,
+      amount: fill.amount,
+      ruleTreatment: fill.treatment,
+      /* Show the filled service as editable text, with the way back
+         to the client's own list. */
+      selectedRule: SERVICE_OTHER,
+      serviceAttached: true,
+    });
+    adoptTreatment(key, fill.treatment);
     /* The due date stays blank: the other client's next due date is
        not this client's. */
     setInvDueDate('');
     setInvDomain(fill.domain);
-    /* Show the filled service as editable text, with the way back to
-       the client's own list. */
-    setSelectedRule(SERVICE_OTHER);
-    setServiceAttached(true);
   }
 
   function handleClientChange(clientId) {
     setInvClient(clientId);
-    setServiceAttached(false);
-    setInvService('');
-    setInvAmount('');
+    setInvLines([newInvoiceLine(0)]);
+    lineKeyRef.current = 1;
     setInvTreatment('vat_tds');
     setInvDueDate('');
     setInvDomain('');
     loadRules(clientId);
   }
 
-  function handleRuleChange(ruleId) {
+  function handleLineRuleChange(key, ruleId) {
     const clientDomain = (clients || []).find((c) => String(c.id) === String(invClient))?.domain ||
       (prefillClient && prefillClient.domain) || '';
-    setServiceAttached(false);
     if (ruleId === SERVICE_OTHER) {
       /* A new service, not one of the listed rules: clear the
          rule-filled fields and let the user type. The domain stays
          the client's own domain. */
-      setSelectedRule(SERVICE_OTHER);
-      setInvService('');
-      setInvAmount('');
-      setInvTreatment('vat_tds');
+      updateLine(key, {
+        selectedRule: SERVICE_OTHER,
+        service: '',
+        amount: '',
+        serviceAttached: false,
+        ruleTreatment: '',
+      });
       setInvDueDate('');
       setInvDomain(clientDomain);
       return;
@@ -354,21 +426,28 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
       /* Attach a service from another client instead: clear the
          rule-filled fields, fetch every rule, and show the attach
          list. The domain stays the client's own domain. */
-      setSelectedRule(SERVICE_ATTACH);
-      setInvService('');
-      setInvAmount('');
-      setInvTreatment('vat_tds');
+      updateLine(key, {
+        selectedRule: SERVICE_ATTACH,
+        service: '',
+        amount: '',
+        serviceAttached: false,
+        ruleTreatment: '',
+      });
       setInvDueDate('');
       setInvDomain(clientDomain);
       loadAllRules();
       return;
     }
-    setSelectedRule(ruleId);
     const rule = rules.find((r) => String(r.id) === String(ruleId)) || null;
     const fill = prefillFromRule(rule, rules, clientDomain);
-    setInvService(fill.service);
-    setInvAmount(fill.amount);
-    setInvTreatment(fill.treatment);
+    updateLine(key, {
+      selectedRule: fill.ruleId,
+      service: fill.service,
+      amount: fill.amount,
+      serviceAttached: false,
+      ruleTreatment: fill.treatment,
+    });
+    adoptTreatment(key, fill.treatment);
     setInvDueDate(fill.dueDate);
     setInvDomain(fill.domain);
   }
@@ -391,10 +470,16 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
       (clients || []).find((c) => String(c.id) === String(pendingPrefill.clientId))?.domain || '';
     const fill = prefillFromRule(pendingPrefill.rule, rules, clientDomain);
     /* A rule that is not among the client's active rules fills as
-       free text — show the text field, with the way back to the list. */
-    setSelectedRule(fill.ruleId || (rules.length > 0 ? SERVICE_OTHER : ''));
-    setInvService(fill.service);
-    setInvAmount(fill.amount);
+       free text — show the text field, with the way back to the list.
+       The prefill fills the first line; more lines can be added. */
+    setInvLines([{
+      ...newInvoiceLine(0),
+      selectedRule: fill.ruleId || (rules.length > 0 ? SERVICE_OTHER : ''),
+      service: fill.service,
+      amount: fill.amount,
+      ruleTreatment: fill.treatment,
+    }]);
+    lineKeyRef.current = 1;
     setInvTreatment(fill.treatment);
     setInvDueDate(fill.dueDate);
     setInvDomain(fill.domain);
@@ -414,21 +499,36 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
     (inv) => String(inv.id) === String(vrBillId),
   ) || null;
 
+  /* The treatments the filled lines came from — more than one means
+     the lines disagree, and the invoice's single treatment is a
+     choice, not a given. */
+  const lineTreatments = [...new Set(invLines.map((l) => l.ruleTreatment).filter(Boolean))];
+  const mixedTreatments = lineTreatments.length > 1;
+
   async function createInvoice(e) {
     e.preventDefault();
     setInvFormError('');
     setInvFormSuccess('');
     setInvErrors({});
 
-    const amount = parseFloat(invAmount);
     if (!invClient) { setInvFormError('Pick a client first.'); return; }
-    if (!(amount > 0)) { setInvFormError('Enter an amount above 0.'); return; }
+    /* Empty lines are skipped; a line with a service but no amount,
+       or an amount but no service, blocks the save. */
+    const activeLines = (invLines || []).filter((l) => (l.service || '').trim() || (l.amount || '').trim());
+    if (activeLines.length === 0) { setInvFormError('Add at least one service.'); return; }
+    for (const l of activeLines) {
+      if (!(l.service || '').trim()) { setInvFormError('Enter a service for each line.'); return; }
+      if (!(parseFloat(l.amount) > 0)) { setInvFormError('Enter an amount above 0 for each service.'); return; }
+    }
+    const joined = joinInvoiceLines(activeLines);
+    if (!joined.amount || !(joined.amount > 0)) { setInvFormError('Enter an amount above 0.'); return; }
+    if (joined.service.length > 1000) { setInvFormError('The combined service text is too long — shorten a service.'); return; }
     if (!invDate) { setInvFormError('Pick an issue date.'); return; }
 
     const payload = {
       client_id: parseInt(invClient, 10),
-      service: invService.trim(),
-      amount_npr: amount,
+      service: joined.service,
+      amount_npr: joined.amount,
       treatment: invTreatment,
       date_ad: invDate,
     };
@@ -455,10 +555,8 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
         lines.push('Warning: ' + resp.meta.pan_warning);
       }
       setInvFormSuccess(lines.join(' '));
-      setInvService('');
-      setInvAmount('');
-      setSelectedRule('');
-      setServiceAttached(false);
+      setInvLines([newInvoiceLine(0)]);
+      lineKeyRef.current = 1;
       setInvDomain('');
       setInvNotes('');
       onWrote();
@@ -647,8 +745,10 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
               <h5 className="card-title">Create invoice</h5>
               <p className="text-muted small">
                 Pick a client — their services and amounts fill in from
-                their billing rules. The API numbers the invoice, works out
-                the fiscal year and the VAT/TDS split, and marks tax invoices.
+                their billing rules. Add as many services as the invoice
+                needs; the total is the sum. The API numbers the invoice,
+                works out the fiscal year and the VAT/TDS split, and marks
+                tax invoices.
               </p>
               <form onSubmit={createInvoice} noValidate>
                 <div className="form-group">
@@ -677,80 +777,127 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
                   <FieldError msg={invErrors.client_id && invErrors.client_id.join(' ')} />
                 </div>
                 <div className="form-group">
-                  <label htmlFor="invService">Service</label>
-                  {serviceFieldMode({ hasClient: !!invClient, rulesLoading, rules, selectedRule }) === 'loading' ? (
-                    <input
-                      id="invService"
-                      className="form-control"
-                      type="text"
-                      placeholder="Loading services…"
-                      disabled
-                      value=""
-                      readOnly
-                    />
-                  ) : serviceFieldMode({ hasClient: !!invClient, rulesLoading, rules, selectedRule }) === 'select' ? (
-                    <select
-                      id="invService"
-                      className="form-control"
-                      value={selectedRule}
-                      onChange={(e) => handleRuleChange(e.target.value)}
-                    >
-                      <option value="">Pick a service…</option>
-                      {rules.map((r) => (
-                        <option key={r.id} value={r.id}>
-                          {r.service}
-                          {r.amount_npr !== null && r.amount_npr !== undefined
-                            ? ' — ' + money(r.amount_npr)
-                            : ''}
-                        </option>
-                      ))}
-                      <option value={SERVICE_ATTACH}>Attach an existing service or AMC…</option>
-                      <option value={SERVICE_OTHER}>Other — type a new service</option>
-                    </select>
-                  ) : serviceFieldMode({ hasClient: !!invClient, rulesLoading, rules, selectedRule }) === 'attach' ? (
-                    <>
-                      {allRulesLoading ? (
-                        <input
-                          id="invService"
-                          className="form-control"
-                          type="text"
-                          placeholder="Loading services…"
-                          disabled
-                          value=""
-                          readOnly
-                        />
-                      ) : attachOptions.length > 0 ? (
-                        attachSelect
-                      ) : (
-                        <small className="form-text text-muted">
-                          No existing services could be loaded.{' '}
-                          <button
-                            type="button"
-                            className="btn btn-link btn-sm p-0 align-baseline"
-                            onClick={() => handleRuleChange('')}
-                          >
-                            Back to services
-                          </button>
-                        </small>
-                      )}
-                    </>
-                  ) : (
-                    <>
-                      {invClient && !rulesLoading && rules.length === 0 && attachOptions.length > 0 && attachSelect}
-                      <input
-                        id="invService"
-                        className="form-control"
-                        type="text"
-                        placeholder={invClient
-                          ? 'e.g. Hosting renewal — example.com'
-                          : 'Pick a client first'}
-                        maxLength="1000"
-                        disabled={!invClient}
-                        value={invService}
-                        onChange={(e) => setInvService(e.target.value)}
-                      />
-                    </>
-                  )}
+                  <label>Services</label>
+                  {invLines.map((line) => {
+                    const mode = serviceFieldMode({ hasClient: !!invClient, rulesLoading, rules, selectedRule: line.selectedRule });
+                    return (
+                      <div key={line.key} className="form-row align-items-start mb-2">
+                        <div className="col-md-8">
+                          {mode === 'loading' ? (
+                            <input
+                              className="form-control"
+                              type="text"
+                              placeholder="Loading services…"
+                              disabled
+                              value=""
+                              readOnly
+                            />
+                          ) : mode === 'select' ? (
+                            <select
+                              className="form-control"
+                              value={line.selectedRule}
+                              onChange={(e) => handleLineRuleChange(line.key, e.target.value)}
+                            >
+                              <option value="">Pick a service…</option>
+                              {rules.map((r) => (
+                                <option key={r.id} value={r.id}>
+                                  {r.service}
+                                  {r.amount_npr !== null && r.amount_npr !== undefined
+                                    ? ' — ' + money(r.amount_npr)
+                                    : ''}
+                                </option>
+                              ))}
+                              <option value={SERVICE_ATTACH}>Attach an existing service or AMC…</option>
+                              <option value={SERVICE_OTHER}>Other — type a new service</option>
+                            </select>
+                          ) : mode === 'attach' ? (
+                            <>
+                              {allRulesLoading ? (
+                                <input
+                                  className="form-control"
+                                  type="text"
+                                  placeholder="Loading services…"
+                                  disabled
+                                  value=""
+                                  readOnly
+                                />
+                              ) : attachOptions.length > 0 ? (
+                                attachSelectFor(line.key)
+                              ) : (
+                                <small className="form-text text-muted">
+                                  No existing services could be loaded.{' '}
+                                  <button
+                                    type="button"
+                                    className="btn btn-link btn-sm p-0 align-baseline"
+                                    onClick={() => handleLineRuleChange(line.key, '')}
+                                  >
+                                    Back to services
+                                  </button>
+                                </small>
+                              )}
+                            </>
+                          ) : (
+                            <>
+                              {invClient && !rulesLoading && rules.length === 0 && attachOptions.length > 0 && attachSelectFor(line.key)}
+                              <input
+                                className="form-control"
+                                type="text"
+                                placeholder={invClient
+                                  ? 'e.g. Hosting renewal — example.com'
+                                  : 'Pick a client first'}
+                                maxLength="1000"
+                                disabled={!invClient}
+                                value={line.service}
+                                onChange={(e) => updateLine(line.key, { service: e.target.value })}
+                              />
+                            </>
+                          )}
+                          {invClient && line.selectedRule === SERVICE_OTHER && rules.length > 0 && (
+                            <small className="form-text text-muted">
+                              A new service, not one of the listed rules.{' '}
+                              <button
+                                type="button"
+                                className="btn btn-link btn-sm p-0 align-baseline"
+                                onClick={() => handleLineRuleChange(line.key, '')}
+                              >
+                                Back to services
+                              </button>
+                            </small>
+                          )}
+                        </div>
+                        <div className="col-md-3">
+                          <input
+                            className="form-control"
+                            type="number"
+                            min="0.01"
+                            step="0.01"
+                            placeholder="0.00"
+                            aria-label="Amount (NPR)"
+                            value={line.amount}
+                            onChange={(e) => updateLine(line.key, { amount: e.target.value })}
+                          />
+                          {showRuleFilledNote({ selectedRule: line.selectedRule, serviceAttached: line.serviceAttached }) && (
+                            <small className="form-text text-muted">
+                              Filled from the billing rule — change it if this
+                              invoice differs.
+                            </small>
+                          )}
+                        </div>
+                        <div className="col-md-1">
+                          {invLines.length > 1 && (
+                            <button
+                              type="button"
+                              className="btn btn-outline-danger btn-sm"
+                              onClick={() => removeInvoiceLine(line.key)}
+                              aria-label="Remove this service"
+                            >
+                              ×
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
                   {invClient && !rulesLoading && rules.length === 0 && (
                     <small className="form-text text-muted">
                       {attachOptions.length > 0
@@ -758,58 +905,38 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
                         : 'No services on file for this client — type the service.'}
                     </small>
                   )}
-                  {invClient && selectedRule === SERVICE_OTHER && rules.length > 0 && (
-                    <small className="form-text text-muted">
-                      A new service, not one of the listed rules.{' '}
-                      <button
-                        type="button"
-                        className="btn btn-link btn-sm p-0 align-baseline"
-                        onClick={() => handleRuleChange('')}
-                      >
-                        Back to services
-                      </button>
-                    </small>
-                  )}
+                  <button type="button" className="btn btn-outline-secondary btn-sm mt-1" onClick={addInvoiceLine}>
+                    + Add another service
+                  </button>
+                  <p className="text-muted small mt-2 mb-0">
+                    Total: <strong>{money(joinInvoiceLines(invLines).amount)}</strong>
+                  </p>
                   {rulesError && (
                     <small className="form-text text-danger">{rulesError}</small>
                   )}
                   <FieldError msg={invErrors.service && invErrors.service.join(' ')} />
+                  <FieldError msg={invErrors.amount_npr && invErrors.amount_npr.join(' ')} />
                 </div>
-                <div className="form-row">
-                  <div className="form-group col-md-6">
-                    <label htmlFor="invAmount">Amount (NPR)</label>
-                    <input
-                      id="invAmount"
-                      className="form-control"
-                      type="number"
-                      min="0.01"
-                      step="0.01"
-                      placeholder="0.00"
-                      value={invAmount}
-                      onChange={(e) => setInvAmount(e.target.value)}
-                    />
-                    {((selectedRule && selectedRule !== SERVICE_OTHER) || serviceAttached) && (
-                      <small className="form-text text-muted">
-                        Filled from the billing rule — change it if this
-                        invoice differs.
-                      </small>
-                    )}
-                    <FieldError msg={invErrors.amount_npr && invErrors.amount_npr.join(' ')} />
-                  </div>
-                  <div className="form-group col-md-6">
-                    <label htmlFor="invTreatment">Treatment</label>
-                    <select
-                      id="invTreatment"
-                      className="form-control"
-                      value={invTreatment}
-                      onChange={(e) => setInvTreatment(e.target.value)}
-                    >
-                      {treatments.map((t) => (
-                        <option key={t} value={t}>{TREATMENT_LABELS[t] || t}</option>
-                      ))}
-                    </select>
-                    <FieldError msg={invErrors.treatment && invErrors.treatment.join(' ')} />
-                  </div>
+                <div className="form-group">
+                  <label htmlFor="invTreatment">Treatment</label>
+                  <select
+                    id="invTreatment"
+                    className="form-control"
+                    value={invTreatment}
+                    onChange={(e) => setInvTreatment(e.target.value)}
+                  >
+                    {treatments.map((t) => (
+                      <option key={t} value={t}>{TREATMENT_LABELS[t] || t}</option>
+                    ))}
+                  </select>
+                  {mixedTreatments && (
+                    <small className="form-text text-muted">
+                      These services have different treatments — the invoice
+                      uses {TREATMENT_LABELS[invTreatment] || invTreatment}.
+                      Change it if needed.
+                    </small>
+                  )}
+                  <FieldError msg={invErrors.treatment && invErrors.treatment.join(' ')} />
                 </div>
                 <div className="form-row">
                   <div className="form-group col-md-6">
