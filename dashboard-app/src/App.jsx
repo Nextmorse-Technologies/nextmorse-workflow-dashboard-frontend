@@ -21,7 +21,7 @@ const TABS = [
   { key: 'billing', label: 'Billing' },
 ];
 
-function Header() {
+function Header({ signedIn, onReload, onSignOut }) {
   const [navOpen, setNavOpen] = useState(false);
   return (
     <header className="header">
@@ -54,6 +54,28 @@ function Header() {
                   <li className="nav-item">
                     <a href="/index.html#contact" className="nav-link">Contact</a>
                   </li>
+                  {signedIn && (
+                    <>
+                      <li className="nav-item">
+                        <a
+                          className="nav-link"
+                          href="#reload"
+                          onClick={(e) => { e.preventDefault(); onReload(); }}
+                        >
+                          Reload
+                        </a>
+                      </li>
+                      <li className="nav-item">
+                        <a
+                          className="nav-link"
+                          href="#signout"
+                          onClick={(e) => { e.preventDefault(); onSignOut(); }}
+                        >
+                          Sign out
+                        </a>
+                      </li>
+                    </>
+                  )}
                 </ul>
               </div>
             </nav>
@@ -266,30 +288,18 @@ export default function App() {
 
   return (
     <>
-      <Header />
+      <Header
+        signedIn={signedIn}
+        onReload={() => loadSection(activeTab)}
+        onSignOut={signOut}
+      />
       <section className="space-ptb">
         <div className="container">
           {/* Dashboard sections */}
           <div className="row justify-content-center">
             <div className="col-lg-12">
-              <div className="d-flex justify-content-between align-items-center mb-3">
+              <div className="mb-3">
                 <small className="text-muted">{dashStatus}</small>
-                <div>
-                  <button
-                    className="btn btn-outline-secondary btn-sm mr-2"
-                    type="button"
-                    onClick={() => loadSection(activeTab)}
-                  >
-                    Reload
-                  </button>
-                  <button
-                    className="btn btn-outline-secondary btn-sm"
-                    type="button"
-                    onClick={signOut}
-                  >
-                    Sign out
-                  </button>
-                </div>
               </div>
                 {dashError && (
                   <div className="alert alert-danger" role="alert">{dashError}</div>
