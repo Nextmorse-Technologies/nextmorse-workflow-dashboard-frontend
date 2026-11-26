@@ -429,7 +429,7 @@ export default function App() {
                       />
                     )}
                     {activeTab === 'vendor' && (
-                      <VendorBills api={api} refreshKey={ledgerRefresh} />
+                      <VendorBills api={api} refreshKey={ledgerRefresh} fy={effectiveFy} />
                     )}
                     {activeTab === 'rules' && (
                       <BillingRules
