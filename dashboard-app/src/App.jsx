@@ -339,7 +339,7 @@ export default function App() {
                       <Invoices summary={sections.invoices} openList={sections.openList} />
                     )}
                     {activeTab === 'receipts' && (
-                      <Receipts data={sections.receipts} />
+                      <Receipts data={sections.receipts} meta={meta} apiBase={authRef.current.base} />
                     )}
                     {activeTab === 'reports' && <Reports data={sections.reports} />}
                     {activeTab === 'billing' && (
