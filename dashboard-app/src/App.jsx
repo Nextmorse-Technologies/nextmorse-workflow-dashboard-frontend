@@ -13,6 +13,7 @@ import Invoices from './components/Invoices.jsx';
 import Receipts from './components/Receipts.jsx';
 import PettyCash from './components/PettyCash.jsx';
 import Billing from './components/Billing.jsx';
+import BillingRules from './components/BillingRules.jsx';
 import VendorBills from './components/VendorBills.jsx';
 
 const TABS = [
@@ -23,6 +24,7 @@ const TABS = [
   { key: 'receipts', label: 'Receipts' },
   { key: 'petty', label: 'Petty cash' },
   { key: 'vendor', label: 'Vendor bills' },
+  { key: 'rules', label: 'Billing rules' },
   { key: 'billing', label: 'Billing' },
 ];
 
@@ -130,13 +132,15 @@ export default function App() {
   const [invoicesRefresh, setInvoicesRefresh] = useState(0);
   const [pettyRefresh, setPettyRefresh] = useState(0);
   const [ledgerRefresh, setLedgerRefresh] = useState(0);
+  const [rulesRefresh, setRulesRefresh] = useState(0);
   const [fy, setFy] = useState('');
 
   /* The one fiscal-year picker, like Laravel's top-bar picker: it
      sits at the right end of the tab bar, after Billing, on every
      page, and drives the Invoices, Receipts and Petty cash tabs.
-     The Overview, Tax, Bank and Vendor bills tabs stay all-years — the
-     API's summary endpoints take no fiscal year. */
+     The Overview, Tax, Bank, Vendor bills and Billing rules tabs
+     stay all-years — the API's summary endpoints take no fiscal
+     year. */
   const currentFy = (() => {
     if (meta && meta.current_fiscal_year) return meta.current_fiscal_year;
     const p = parseBs(meta && meta.today && meta.today.bs);
@@ -185,6 +189,9 @@ export default function App() {
         /* Same pattern — the Vendor bills tab loads its own lists;
            it shares the ledger refresh counter. */
         setLedgerRefresh((n) => n + 1);
+      } else if (key === 'rules') {
+        /* Same pattern — the Billing rules tab loads its own list. */
+        setRulesRefresh((n) => n + 1);
       } else if (key === 'receipts') {
         const d = await api('/receipts?per_page=50');
         setSections((s) => ({ ...s, receipts: d }));
@@ -299,6 +306,7 @@ export default function App() {
     if (key === 'invoices') return; /* the tab loads its own list */
     if (key === 'petty') return; /* the tab loads its own lists */
     if (key === 'vendor') return; /* the tab loads its own lists */
+    if (key === 'rules') return; /* the tab loads its own list */
     if (!sections[key]) loadSection(key);
   }
 
@@ -399,6 +407,9 @@ export default function App() {
                     )}
                     {activeTab === 'vendor' && (
                       <VendorBills api={api} refreshKey={ledgerRefresh} />
+                    )}
+                    {activeTab === 'rules' && (
+                      <BillingRules api={api} clients={clients} refreshKey={rulesRefresh} />
                     )}
                     {activeTab === 'billing' && (
                       <Billing
