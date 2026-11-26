@@ -269,18 +269,6 @@ export default function App() {
       <Header />
       <section className="space-ptb">
         <div className="container">
-          <div className="row justify-content-center pb-3 pb-md-4">
-            <div className="col-lg-10">
-              <div className="section-title text-center">
-                <h2>Dashboard</h2>
-                <p className="lead">
-                  Nextmorse Technologies Pvt. Ltd. — figures, tax, bank, invoices and
-                  billing, live from the unified API.
-                </p>
-              </div>
-            </div>
-          </div>
-
           {/* Dashboard sections */}
           <div className="row justify-content-center">
             <div className="col-lg-12">
