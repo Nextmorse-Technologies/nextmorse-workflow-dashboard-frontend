@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { friendlyError, money } from '../api.js';
-import { dateLabel, fyOfBs, parseBs } from '../dates.js';
+import { dateLabel, fyOfBs } from '../dates.js';
 import { displayNumber, GroupTable } from './Invoices.jsx';
 
 /* The Petty cash register, like the Laravel page: the no-VAT-no-TDS
@@ -8,10 +8,6 @@ import { displayNumber, GroupTable } from './Invoices.jsx';
    those invoices. Lists only — nothing here is government-tracked.
    The live Laravel page has no locked card (its Locked card view
    was never pushed), so this tab has none either. */
-
-function fyString(fyStart) {
-  return fyStart + '/' + String(fyStart + 1).slice(2);
-}
 
 function receiptNumber(r) {
   return r.display_number || '—';
@@ -31,8 +27,7 @@ export function total(items) {
   return items.reduce((sum, x) => sum + (Number(x.amount_npr) || 0), 0);
 }
 
-export default function PettyCash({ api, meta, apiBase, refreshKey, initialInvoices, initialReceipts }) {
-  const [fyFilter, setFyFilter] = useState('');
+export default function PettyCash({ api, apiBase, refreshKey, fy, initialInvoices, initialReceipts }) {
   const [invoices, setInvoices] = useState(initialInvoices || null);
   const [receipts, setReceipts] = useState(initialReceipts || null);
   const [loading, setLoading] = useState(!initialInvoices || !initialReceipts);
@@ -77,23 +72,13 @@ export default function PettyCash({ api, meta, apiBase, refreshKey, initialInvoi
       }
     })();
     return () => { cancelled = true; };
-    // Re-fetch when a Billing write lands; api/meta are stable.
+    // Re-fetch when a Billing write lands; api is stable.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshKey]);
 
-  /* Current FY from the API's today (BS); the list's latest FY if
-     the API has no today yet. */
-  const todayBs = meta && meta.today && meta.today.bs;
-  const todayFy = (() => {
-    const p = parseBs(todayBs);
-    if (!p) return null;
-    return fyString(p.mo >= 4 ? p.y : p.y - 1);
-  })();
-  const fys = [...new Set((invoices || []).map((r) => r.fiscal_year).filter(Boolean))].sort().reverse();
-  if (todayFy && !fys.includes(todayFy)) fys.unshift(todayFy);
-  const effectiveFy = fyFilter === 'all'
-    ? 'all'
-    : (fyFilter !== '' ? fyFilter : (todayFy || (fys[0] !== undefined ? fys[0] : 'all')));
+  /* The fiscal year comes from the shared picker in the tab bar
+     (App); this tab only filters on it. */
+  const effectiveFy = fy || 'all';
 
   const shownInvoices = !invoices
     ? []
@@ -114,20 +99,6 @@ export default function PettyCash({ api, meta, apiBase, refreshKey, initialInvoi
           ? 'Showing all years.'
           : 'Showing ' + effectiveFy + ' — money and government figures follow this fiscal year.'}
       </p>
-      <div className="form-group" style={{ maxWidth: 260 }}>
-        <label htmlFor="pettyFy">Fiscal year</label>
-        <select
-          id="pettyFy"
-          className="form-control"
-          value={effectiveFy === 'all' ? 'all' : effectiveFy}
-          onChange={(e) => setFyFilter(e.target.value)}
-        >
-          <option value="all">All years</option>
-          {fys.map((f) => (
-            <option key={f} value={f}>{'FY ' + f}</option>
-          ))}
-        </select>
-      </div>
       {loading && <p className="text-muted">Loading petty cash…</p>}
       {loadError && <div className="alert alert-danger" role="alert">{loadError}</div>}
       {invoices && receipts && (

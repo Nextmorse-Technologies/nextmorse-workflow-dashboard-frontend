@@ -1,6 +1,5 @@
-import { useState } from 'react';
 import { money } from '../api.js';
-import { dateLabel, fyLabel, fyOfBs, parseBs } from '../dates.js';
+import { dateLabel, fyOfBs } from '../dates.js';
 
 /* Fiscal year a receipt belongs to, from its BS date. */
 function fyOfReceipt(r) {
@@ -29,27 +28,16 @@ function receiptNumber(r) {
   return r.display_number || '—';
 }
 
-export default function Receipts({ data, meta, apiBase }) {
-  const [fyFilter, setFyFilter] = useState('');
+export default function Receipts({ data, fy, apiBase }) {
   if (!data) return null;
   const list = data.data || [];
 
-  /* Current FY from the API's today (BS); the list's latest FY if
-     the API has no today yet. */
-  const todayBs = meta && meta.today && meta.today.bs;
-  const todayFy = (() => {
-    const p = parseBs(todayBs);
-    if (!p) return null;
-    return p.mo >= 4 ? p.y : p.y - 1;
-  })();
-  const fys = [...new Set(list.map(fyOfReceipt).filter((f) => f !== null))].sort((a, b) => b - a);
-  if (todayFy !== null && !fys.includes(todayFy)) fys.unshift(todayFy);
-  const effectiveFy = fyFilter === 'all'
-    ? 'all'
-    : (fyFilter !== '' ? parseInt(fyFilter, 10) : (todayFy !== null ? todayFy : (fys[0] !== undefined ? fys[0] : 'all')));
+  /* The fiscal year comes from the shared picker in the tab bar
+     (App); this tab only filters on it. */
+  const effectiveFy = fy || 'all';
   const shown = effectiveFy === 'all'
     ? list
-    : list.filter((r) => fyOfReceipt(r) === effectiveFy);
+    : list.filter((r) => fyOfReceipt(r) === parseInt(effectiveFy.slice(0, 4), 10));
 
   const grouped = { receipts: [], payments: [], petty_cash: [], unlinked: [] };
   shown.forEach((r) => grouped[groupOf(r)].push(r));
@@ -60,22 +48,8 @@ export default function Receipts({ data, meta, apiBase }) {
       <p className="mb-2 text-muted">
         {effectiveFy === 'all'
           ? 'Showing all years.'
-          : 'Showing ' + fyLabel(effectiveFy) + ' — money and government figures follow this fiscal year.'}
+          : 'Showing ' + effectiveFy + ' — money and government figures follow this fiscal year.'}
       </p>
-      <div className="form-group" style={{ maxWidth: 260 }}>
-        <label htmlFor="receiptFy">Fiscal year</label>
-        <select
-          id="receiptFy"
-          className="form-control"
-          value={effectiveFy === 'all' ? 'all' : String(effectiveFy)}
-          onChange={(e) => setFyFilter(e.target.value)}
-        >
-          <option value="all">All years</option>
-          {fys.map((f) => (
-            <option key={f} value={String(f)}>{fyLabel(f)}</option>
-          ))}
-        </select>
-      </div>
       {GROUPS.map((g) => {
         const items = grouped[g.key];
         const total = items.reduce((sum, r) => sum + (Number(r.amount_npr) || 0), 0);

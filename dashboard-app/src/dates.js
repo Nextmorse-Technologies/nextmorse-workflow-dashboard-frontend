@@ -35,6 +35,11 @@ export function fyLabel(fy) {
   return 'FY ' + fy + '/' + String(fy + 1).slice(2);
 }
 
+/* 2083 => '2083/84' — the fiscal-year label the API uses. */
+export function fyString(fyStart) {
+  return fyStart + '/' + String(fyStart + 1).slice(2);
+}
+
 export function bsLabel(bs) {
   const p = parseBs(bs);
   if (!p) return '';

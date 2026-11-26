@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { friendlyError, money } from '../api.js';
-import { dateLabel, parseBs } from '../dates.js';
+import { dateLabel } from '../dates.js';
 
 /* The Client Invoices register, like the Laravel page: the sent
    invoices for the fiscal year grouped into Tax / Petty cash /
@@ -73,10 +73,6 @@ export function statusBadge(status) {
   return 'badge-secondary';
 }
 
-function fyString(fyStart) {
-  return fyStart + '/' + String(fyStart + 1).slice(2);
-}
-
 function printUrl(apiBase, inv) {
   if (!apiBase) return null;
   return apiBase.replace(/\/+$/, '') + '/invoices/' + inv.id + '/print';
@@ -127,8 +123,7 @@ export function GroupTable({ items, apiBase }) {
   );
 }
 
-export default function Invoices({ api, meta, apiBase, refreshKey, initialRows }) {
-  const [fyFilter, setFyFilter] = useState('');
+export default function Invoices({ api, apiBase, refreshKey, fy, initialRows }) {
   const [rows, setRows] = useState(initialRows || null);
   const [loading, setLoading] = useState(!initialRows);
   const [loadError, setLoadError] = useState('');
@@ -161,23 +156,13 @@ export default function Invoices({ api, meta, apiBase, refreshKey, initialRows }
       }
     })();
     return () => { cancelled = true; };
-    // Re-fetch when a Billing write lands; api/meta are stable.
+    // Re-fetch when a Billing write lands; api is stable.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshKey]);
 
-  /* Current FY from the API's today (BS); the list's latest FY if
-     the API has no today yet. */
-  const todayBs = meta && meta.today && meta.today.bs;
-  const todayFy = (() => {
-    const p = parseBs(todayBs);
-    if (!p) return null;
-    return fyString(p.mo >= 4 ? p.y : p.y - 1);
-  })();
-  const fys = [...new Set((rows || []).map((r) => r.fiscal_year).filter(Boolean))].sort().reverse();
-  if (todayFy && !fys.includes(todayFy)) fys.unshift(todayFy);
-  const effectiveFy = fyFilter === 'all'
-    ? 'all'
-    : (fyFilter !== '' ? fyFilter : (todayFy || (fys[0] !== undefined ? fys[0] : 'all')));
+  /* The fiscal year comes from the shared picker in the tab bar
+     (App); this tab only filters on it. */
+  const effectiveFy = fy || 'all';
   const shown = !rows
     ? []
     : effectiveFy === 'all'
@@ -197,20 +182,6 @@ export default function Invoices({ api, meta, apiBase, refreshKey, initialRows }
           ? 'Showing all years.'
           : 'Showing ' + effectiveFy + ' — money and government figures follow this fiscal year.'}
       </p>
-      <div className="form-group" style={{ maxWidth: 260 }}>
-        <label htmlFor="invoiceFy">Fiscal year</label>
-        <select
-          id="invoiceFy"
-          className="form-control"
-          value={effectiveFy === 'all' ? 'all' : effectiveFy}
-          onChange={(e) => setFyFilter(e.target.value)}
-        >
-          <option value="all">All years</option>
-          {fys.map((f) => (
-            <option key={f} value={f}>{'FY ' + f}</option>
-          ))}
-        </select>
-      </div>
       {loading && <p className="text-muted">Loading invoices…</p>}
       {loadError && <div className="alert alert-danger" role="alert">{loadError}</div>}
       {rows && (

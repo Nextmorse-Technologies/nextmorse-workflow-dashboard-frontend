@@ -5,6 +5,7 @@ import {
   createApiClient,
   friendlyError,
 } from './api.js';
+import { fyString, parseBs } from './dates.js';
 import Overview from './components/Overview.jsx';
 import Tax from './components/Tax.jsx';
 import Bank from './components/Bank.jsx';
@@ -128,6 +129,22 @@ export default function App() {
   const [sections, setSections] = useState({});
   const [invoicesRefresh, setInvoicesRefresh] = useState(0);
   const [pettyRefresh, setPettyRefresh] = useState(0);
+  const [fy, setFy] = useState('');
+
+  /* The one fiscal-year picker, like Laravel's top-bar picker: it
+     sits at the right end of the tab bar, after Billing, on every
+     page, and drives the Invoices, Receipts and Petty cash tabs.
+     The Overview, Tax, Bank and Reports tabs stay all-years — the
+     API's summary endpoints take no fiscal year. */
+  const currentFy = (() => {
+    if (meta && meta.current_fiscal_year) return meta.current_fiscal_year;
+    const p = parseBs(meta && meta.today && meta.today.bs);
+    if (!p) return '';
+    return fyString(p.mo >= 4 ? p.y : p.y - 1);
+  })();
+  const fyOptions = meta && meta.fiscal_years ? Object.keys(meta.fiscal_years) : [];
+  if (currentFy && !fyOptions.includes(currentFy)) fyOptions.unshift(currentFy);
+  const effectiveFy = fy === 'all' ? 'all' : (fy !== '' ? fy : (currentFy || 'all'));
   const [verifiedAt, setVerifiedAt] = useState('');
   const [dashSource, setDashSource] = useState('');
 
@@ -332,6 +349,23 @@ export default function App() {
                       </a>
                     </li>
                   ))}
+                  {meta && (
+                    <li className="nav-item ml-auto d-flex align-items-center pl-3">
+                      <label htmlFor="fyPicker" className="mb-0 mr-2 small text-muted">Fiscal year</label>
+                      <select
+                        id="fyPicker"
+                        className="form-control form-control-sm"
+                        style={{ width: 'auto' }}
+                        value={effectiveFy}
+                        onChange={(e) => setFy(e.target.value)}
+                      >
+                        <option value="all">All years</option>
+                        {fyOptions.map((f) => (
+                          <option key={f} value={f}>{(meta.fiscal_years && meta.fiscal_years[f]) || ('FY ' + f)}</option>
+                        ))}
+                      </select>
+                    </li>
+                  )}
                 </ul>
 
                 <div className="tab-content pt-4">
@@ -342,20 +376,20 @@ export default function App() {
                     {activeTab === 'invoices' && (
                       <Invoices
                         api={api}
-                        meta={meta}
                         apiBase={authRef.current.base}
                         refreshKey={invoicesRefresh}
+                        fy={effectiveFy}
                       />
                     )}
                     {activeTab === 'receipts' && (
-                      <Receipts data={sections.receipts} meta={meta} apiBase={authRef.current.base} />
+                      <Receipts data={sections.receipts} fy={effectiveFy} apiBase={authRef.current.base} />
                     )}
                     {activeTab === 'petty' && (
                       <PettyCash
                         api={api}
-                        meta={meta}
                         apiBase={authRef.current.base}
                         refreshKey={pettyRefresh}
+                        fy={effectiveFy}
                       />
                     )}
                     {activeTab === 'reports' && <Reports data={sections.reports} />}
