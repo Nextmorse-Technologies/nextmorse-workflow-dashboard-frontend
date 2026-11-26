@@ -15,6 +15,7 @@ import PettyCash from './components/PettyCash.jsx';
 import Billing from './components/Billing.jsx';
 import BillingRules from './components/BillingRules.jsx';
 import VendorBills from './components/VendorBills.jsx';
+import MenuPicker from './components/MenuPicker.jsx';
 
 const TABS = [
   { key: 'overview', label: 'Overview' },
@@ -139,6 +140,9 @@ export default function App() {
      date and domain filled in, all editable. */
   const [billingPrefill, setBillingPrefill] = useState(null);
   const [fy, setFy] = useState('');
+  /* The Fiscal year picker's open state — it is a MenuPicker, not a
+     native <select>, like every other picker in the dashboard. */
+  const [fyOpen, setFyOpen] = useState(false);
 
   /* The one fiscal-year picker, like Laravel's top-bar picker: it
      sits at the right end of the tab bar, after Billing, on every
@@ -382,19 +386,20 @@ export default function App() {
                   ))}
                   {meta && (
                     <li className="nav-item ml-auto d-flex align-items-center pl-3">
-                      <label htmlFor="fyPicker" className="mb-0 mr-2 small text-muted">Fiscal year</label>
-                      <select
-                        id="fyPicker"
-                        className="form-control form-control-sm"
-                        style={{ width: 'auto' }}
-                        value={effectiveFy}
-                        onChange={(e) => setFy(e.target.value)}
-                      >
-                        <option value="all">All years</option>
-                        {fyOptions.map((f) => (
-                          <option key={f} value={f}>{(meta.fiscal_years && meta.fiscal_years[f]) || ('FY ' + f)}</option>
-                        ))}
-                      </select>
+                      <label className="mb-0 mr-2 small text-muted">Fiscal year</label>
+                      <MenuPicker
+                        buttonLabel={effectiveFy === 'all' ? 'All years' : ((meta.fiscal_years && meta.fiscal_years[effectiveFy]) || ('FY ' + effectiveFy))}
+                        options={[{ value: 'all', label: 'All years' }].concat(fyOptions.map((f) => ({
+                          value: f,
+                          label: (meta.fiscal_years && meta.fiscal_years[f]) || ('FY ' + f),
+                        })))}
+                        open={fyOpen}
+                        onToggle={() => setFyOpen(!fyOpen)}
+                        onPick={(v) => { setFy(v); setFyOpen(false); }}
+                        buttonClassName="form-control form-control-sm"
+                        wrapStyle={{ width: 'auto', minWidth: 140 }}
+                        ariaLabel="Fiscal year"
+                      />
                     </li>
                   )}
                 </ul>

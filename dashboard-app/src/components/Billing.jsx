@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import MenuPicker from './MenuPicker';
 import {
   TREATMENTS_FALLBACK,
   TREATMENT_LABELS,
@@ -85,6 +86,33 @@ export function showTypedServiceNote({ hasClient, rules, selectedRule, serviceAt
   );
 }
 
+/* Option lists for the custom pickers (MenuPicker): plain buttons,
+   not native <select> options. The lists are built as single
+   strings because a picker's button shows one label, not several
+   expressions joined by the renderer. */
+export function clientPickerOptions({ activeClients, prefillClient, invClient }) {
+  const options = [{ value: '', label: 'Pick a client…' }];
+  if (invClient && prefillClient && prefillClient.name &&
+      !(activeClients || []).some((c) => String(c.id) === String(invClient))) {
+    options.push({ value: String(invClient), label: prefillClient.name });
+  }
+  (activeClients || []).forEach((c) => options.push({ value: String(c.id), label: c.name }));
+  return options;
+}
+
+export function servicePickerOptions({ rules }) {
+  const options = [{ value: '', label: 'Pick a service…' }];
+  (rules || []).forEach((r) => options.push({
+    value: String(r.id),
+    label: r.service + (r.amount_npr !== null && r.amount_npr !== undefined
+      ? ' — ' + money(r.amount_npr)
+      : ''),
+  }));
+  options.push({ value: SERVICE_ATTACH, label: 'Attach an existing service or AMC…' });
+  options.push({ value: SERVICE_OTHER, label: 'Other — type a new service' });
+  return options;
+}
+
 export const SERVICE_OTHER = '__other';
 export const SERVICE_ATTACH = '__attach';
 export function serviceFieldMode({ hasClient, rulesLoading, rules, selectedRule }) {
@@ -154,8 +182,13 @@ export function joinInvoiceLines(lines) {
   return { service: parts.join(' + '), amount: Math.round(total * 100) / 100 };
 }
 
-export default function Billing({ api, clients, openInvoices, meta, onWrote, prefill, onPrefillApplied, vendorRefresh, initialVendorBills }) {
+export default function Billing({ api, clients, openInvoices, meta, onWrote, prefill, onPrefillApplied, vendorRefresh, initialVendorBills, initialOpenPicker }) {
   const [invClient, setInvClient] = useState('');
+  /* Which custom picker is open ('client', 'service-<key>',
+     'attach-<key>', 'treatment', 'payInvoice', 'vbSupplier',
+     'vbVatIncluded', 'vrBill', or null). One open at a time; a pick
+     or a click elsewhere closes it. */
+  const [openPicker, setOpenPicker] = useState(initialOpenPicker || null);
   /* The client picked by an "Issue invoice" button (the Billing rules
      tab) when that client is not Active — the Client dropdown only
      lists Active clients, so the name and domain are kept here to show
@@ -275,6 +308,13 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
      only Active here too, in case an older API ignores the filter. */
   const activeClients = clients.filter((c) => c.status === 'Active');
 
+  /* The picked client's name for the Client picker's button — the
+     Active name when the client is Active, else the one-off name
+     kept from an "Issue invoice" prefill. */
+  const pickedClient = (activeClients || []).find((c) => String(c.id) === String(invClient)) || null;
+  const pickedClientName = pickedClient ? pickedClient.name
+    : (invClient && prefillClient && prefillClient.name ? prefillClient.name : '');
+
   async function loadRules(clientId) {
     setRules([]);
     setRulesError('');
@@ -350,17 +390,15 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
      service from the rule. */
   function attachSelectFor(key) {
     return (
-      <select
-        className="form-control mb-2"
-        value=""
-        onChange={(e) => { if (e.target.value) handleLineAttach(key, e.target.value); }}
-        aria-label="Attach an existing service or AMC"
-      >
-        <option value="">Attach an existing service or AMC…</option>
-        {attachOptions.map((o) => (
-          <option key={o.id} value={o.id}>{o.label}</option>
-        ))}
-      </select>
+      <MenuPicker
+        buttonLabel="Attach an existing service or AMC…"
+        options={attachOptions.map((o) => ({ value: String(o.id), label: o.label }))}
+        open={openPicker === 'attach-' + key}
+        onToggle={() => setOpenPicker(openPicker === 'attach-' + key ? null : 'attach-' + key)}
+        onPick={(v) => { if (v) handleLineAttach(key, v); setOpenPicker(null); }}
+        emptyText="No existing services could be loaded."
+        ariaLabel="Attach an existing service or AMC"
+      />
     );
   }
 
@@ -385,6 +423,7 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
   }
 
   function removeInvoiceLine(key) {
+    setOpenPicker(null);
     setInvLines((lines) => (lines.length > 1 ? lines.filter((l) => l.key !== key) : lines));
   }
 
@@ -410,6 +449,7 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
   }
 
   function handleClientChange(clientId) {
+    setOpenPicker(null);
     setInvClient(clientId);
     setInvLines([newInvoiceLine(0)]);
     lineKeyRef.current = 1;
@@ -570,6 +610,7 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
         lines.push('Warning: ' + resp.meta.pan_warning);
       }
       setInvFormSuccess(lines.join(' '));
+      setOpenPicker(null);
       setInvLines([newInvoiceLine(0)]);
       lineKeyRef.current = 1;
       setInvDomain('');
@@ -767,34 +808,24 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
               </p>
               <form onSubmit={createInvoice} noValidate>
                 <div className="form-group">
-                  <label htmlFor="invClient">Client</label>
-                  <select
-                    id="invClient"
-                    className="form-control"
-                    value={invClient}
-                    onChange={(e) => { setPrefillClient(null); handleClientChange(e.target.value); }}
-                  >
-                    <option value="">Pick a client…</option>
-                    {invClient && prefillClient && prefillClient.name &&
-                      !activeClients.some((c) => String(c.id) === String(invClient)) && (
-                      <option value={invClient}>{prefillClient.name}</option>
-                    )}
-                    {activeClients.length ? (
-                      activeClients.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.name}
-                        </option>
-                      ))
-                    ) : (
-                      <option value="">No active clients</option>
-                    )}
-                  </select>
+                  <label>Client</label>
+                  <MenuPicker
+                    buttonLabel={pickedClientName || 'Pick a client…'}
+                    options={clientPickerOptions({ activeClients, prefillClient, invClient })}
+                    open={openPicker === 'client'}
+                    onToggle={() => setOpenPicker(openPicker === 'client' ? null : 'client')}
+                    onPick={(v) => { setPrefillClient(null); handleClientChange(v); setOpenPicker(null); }}
+                    emptyText="No active clients"
+                    ariaLabel="Client"
+                  />
                   <FieldError msg={invErrors.client_id && invErrors.client_id.join(' ')} />
                 </div>
                 <div className="form-group">
                   <label>Services</label>
                   {invLines.map((line) => {
                     const mode = serviceFieldMode({ hasClient: !!invClient, rulesLoading, rules, selectedRule: line.selectedRule });
+                    const serviceOptions = servicePickerOptions({ rules });
+                    const pickedServiceLabel = serviceOptions.find((o) => o.value === String(line.selectedRule))?.label || 'Pick a service…';
                     return (
                       <div key={line.key} className="form-row align-items-start mb-2">
                         <div className="col-md-8">
@@ -808,23 +839,14 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
                               readOnly
                             />
                           ) : mode === 'select' ? (
-                            <select
-                              className="form-control"
-                              value={line.selectedRule}
-                              onChange={(e) => handleLineRuleChange(line.key, e.target.value)}
-                            >
-                              <option value="">Pick a service…</option>
-                              {rules.map((r) => (
-                                <option key={r.id} value={r.id}>
-                                  {r.service}
-                                  {r.amount_npr !== null && r.amount_npr !== undefined
-                                    ? ' — ' + money(r.amount_npr)
-                                    : ''}
-                                </option>
-                              ))}
-                              <option value={SERVICE_ATTACH}>Attach an existing service or AMC…</option>
-                              <option value={SERVICE_OTHER}>Other — type a new service</option>
-                            </select>
+                            <MenuPicker
+                              buttonLabel={pickedServiceLabel}
+                              options={serviceOptions}
+                              open={openPicker === 'service-' + line.key}
+                              onToggle={() => setOpenPicker(openPicker === 'service-' + line.key ? null : 'service-' + line.key)}
+                              onPick={(v) => { handleLineRuleChange(line.key, v); setOpenPicker(null); }}
+                              ariaLabel="Service"
+                            />
                           ) : mode === 'attach' ? (
                             <>
                               {allRulesLoading ? (
@@ -933,17 +955,15 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
                   <FieldError msg={invErrors.amount_npr && invErrors.amount_npr.join(' ')} />
                 </div>
                 <div className="form-group">
-                  <label htmlFor="invTreatment">Treatment</label>
-                  <select
-                    id="invTreatment"
-                    className="form-control"
-                    value={invTreatment}
-                    onChange={(e) => setInvTreatment(e.target.value)}
-                  >
-                    {treatments.map((t) => (
-                      <option key={t} value={t}>{TREATMENT_LABELS[t] || t}</option>
-                    ))}
-                  </select>
+                  <label>Treatment</label>
+                  <MenuPicker
+                    buttonLabel={TREATMENT_LABELS[invTreatment] || invTreatment}
+                    options={treatments.map((t) => ({ value: t, label: TREATMENT_LABELS[t] || t }))}
+                    open={openPicker === 'treatment'}
+                    onToggle={() => setOpenPicker(openPicker === 'treatment' ? null : 'treatment')}
+                    onPick={(v) => { setInvTreatment(v); setOpenPicker(null); }}
+                    ariaLabel="Treatment"
+                  />
                   {mixedTreatments && (
                     <small className="form-text text-muted">
                       These services have different treatments — the invoice
@@ -1021,25 +1041,24 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
               </p>
               <form onSubmit={recordPayment} noValidate>
                 <div className="form-group">
-                  <label htmlFor="payInvoice">Open invoice</label>
-                  <select
-                    id="payInvoice"
-                    className="form-control"
-                    value={payInvoiceId}
-                    onChange={(e) => setPayInvoiceId(e.target.value)}
-                  >
-                    <option value="">Pick an open invoice…</option>
-                    {receivable.length ? (
-                      receivable.map((inv) => (
-                        <option key={inv.id} value={inv.id}>
-                          {inv.invoice_number} — {inv.client_name} — remaining{' '}
-                          {money(inv.remaining_amount_npr)}
-                        </option>
-                      ))
-                    ) : (
-                      <option value="">No open invoices</option>
-                    )}
-                  </select>
+                  <label>Open invoice</label>
+                  <MenuPicker
+                    buttonLabel={selectedOpenInvoice
+                      ? selectedOpenInvoice.invoice_number + ' — ' + selectedOpenInvoice.client_name +
+                        ' — remaining ' + money(selectedOpenInvoice.remaining_amount_npr)
+                      : 'Pick an open invoice…'}
+                    options={receivable.length
+                      ? [{ value: '', label: 'Pick an open invoice…' }].concat(receivable.map((inv) => ({
+                          value: String(inv.id),
+                          label: inv.invoice_number + ' — ' + inv.client_name +
+                            ' — remaining ' + money(inv.remaining_amount_npr),
+                        })))
+                      : [{ value: '', label: 'No open invoices' }]}
+                    open={openPicker === 'payInvoice'}
+                    onToggle={() => setOpenPicker(openPicker === 'payInvoice' ? null : 'payInvoice')}
+                    onPick={(v) => { setPayInvoiceId(v); setOpenPicker(null); }}
+                    ariaLabel="Open invoice"
+                  />
                   <small className="form-text text-muted">
                     {selectedOpenInvoice
                       ? 'Still to receive on this invoice: ' +
@@ -1124,19 +1143,17 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
               </p>
               <form onSubmit={createVendorBill} noValidate>
                 <div className="form-group">
-                  <label htmlFor="vbSupplier">Supplier</label>
-                  <select
-                    id="vbSupplier"
-                    className="form-control"
-                    value={vbSupplier}
-                    onChange={(e) => setVbSupplier(e.target.value)}
-                  >
-                    <option value="">Pick a supplier…</option>
-                    {SUPPLIERS.map((s) => (
-                      <option key={s} value={s}>{s}</option>
-                    ))}
-                    <option value={SUPPLIER_OTHER}>Other — type a new supplier</option>
-                  </select>
+                  <label>Supplier</label>
+                  <MenuPicker
+                    buttonLabel={vbSupplier === SUPPLIER_OTHER ? 'Other — type a new supplier' : (vbSupplier || 'Pick a supplier…')}
+                    options={[{ value: '', label: 'Pick a supplier…' }]
+                      .concat(SUPPLIERS.map((s) => ({ value: s, label: s })))
+                      .concat([{ value: SUPPLIER_OTHER, label: 'Other — type a new supplier' }])}
+                    open={openPicker === 'vbSupplier'}
+                    onToggle={() => setOpenPicker(openPicker === 'vbSupplier' ? null : 'vbSupplier')}
+                    onPick={(v) => { setVbSupplier(v); setOpenPicker(null); }}
+                    ariaLabel="Supplier"
+                  />
                   {vbSupplier === SUPPLIER_OTHER && (
                     <input
                       className="form-control mt-2"
@@ -1178,16 +1195,18 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
                     <FieldError msg={vbErrors.amount_npr && vbErrors.amount_npr.join(' ')} />
                   </div>
                   <div className="form-group col-md-6">
-                    <label htmlFor="vbVatIncluded">Amount includes 13% VAT?</label>
-                    <select
-                      id="vbVatIncluded"
-                      className="form-control"
-                      value={vbVatIncluded}
-                      onChange={(e) => setVbVatIncluded(e.target.value)}
-                    >
-                      <option value="yes">Yes — 13% included</option>
-                      <option value="no">No</option>
-                    </select>
+                    <label>Amount includes 13% VAT?</label>
+                    <MenuPicker
+                      buttonLabel={vbVatIncluded === 'yes' ? 'Yes — 13% included' : 'No'}
+                      options={[
+                        { value: 'yes', label: 'Yes — 13% included' },
+                        { value: 'no', label: 'No' },
+                      ]}
+                      open={openPicker === 'vbVatIncluded'}
+                      onToggle={() => setOpenPicker(openPicker === 'vbVatIncluded' ? null : 'vbVatIncluded')}
+                      onPick={(v) => { setVbVatIncluded(v); setOpenPicker(null); }}
+                      ariaLabel="Amount includes 13% VAT?"
+                    />
                   </div>
                 </div>
                 <div className="form-row">
@@ -1258,25 +1277,25 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
               </p>
               <form onSubmit={recordVendorPayment} noValidate>
                 <div className="form-group">
-                  <label htmlFor="vrBill">Open vendor bill</label>
-                  <select
-                    id="vrBill"
-                    className="form-control"
-                    value={vrBillId}
-                    onChange={(e) => setVrBillId(e.target.value)}
-                  >
-                    <option value="">Pick an open vendor bill…</option>
-                    {vendorBills.length ? (
-                      vendorBills.map((inv) => (
-                        <option key={inv.id} value={inv.id}>
-                          {(inv.invoice_number || ('#' + inv.id))} — {inv.client_name} — still to pay{' '}
-                          {money(inv.remaining_amount_npr)}
-                        </option>
-                      ))
-                    ) : (
-                      <option value="">No open vendor bills</option>
-                    )}
-                  </select>
+                  <label>Open vendor bill</label>
+                  <MenuPicker
+                    buttonLabel={selectedVendorBill
+                      ? (selectedVendorBill.invoice_number || ('#' + selectedVendorBill.id)) + ' — ' +
+                        selectedVendorBill.client_name + ' — still to pay ' +
+                        money(selectedVendorBill.remaining_amount_npr)
+                      : 'Pick an open vendor bill…'}
+                    options={vendorBills.length
+                      ? [{ value: '', label: 'Pick an open vendor bill…' }].concat(vendorBills.map((inv) => ({
+                          value: String(inv.id),
+                          label: (inv.invoice_number || ('#' + inv.id)) + ' — ' + inv.client_name +
+                            ' — still to pay ' + money(inv.remaining_amount_npr),
+                        })))
+                      : [{ value: '', label: 'No open vendor bills' }]}
+                    open={openPicker === 'vrBill'}
+                    onToggle={() => setOpenPicker(openPicker === 'vrBill' ? null : 'vrBill')}
+                    onPick={(v) => { setVrBillId(v); setOpenPicker(null); }}
+                    ariaLabel="Open vendor bill"
+                  />
                   <small className="form-text text-muted">
                     {selectedVendorBill
                       ? 'Still to pay on this bill: ' +
