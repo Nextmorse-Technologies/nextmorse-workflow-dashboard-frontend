@@ -8,7 +8,7 @@ import { dateLabel } from '../dates.js';
    come from the Active list the app already loads, plus one fetch
    each for any rule whose client is not Active. The page has no
    fiscal-year filter, so this tab is all-years. */
-export default function BillingRules({ api, clients, refreshKey, initialRules, initialClientNames }) {
+export default function BillingRules({ api, clients, refreshKey, onIssueInvoice, initialRules, initialClientNames }) {
   const [rules, setRules] = useState(initialRules || null);
   const [clientNames, setClientNames] = useState(initialClientNames || {});
   const [loading, setLoading] = useState(!initialRules);
@@ -71,6 +71,7 @@ export default function BillingRules({ api, clients, refreshKey, initialRules, i
                   <th>Treatment</th>
                   <th>TDS</th>
                   <th>Next due</th>
+                  <th>Invoice</th>
                 </tr>
               </thead>
               <tbody>
@@ -83,6 +84,15 @@ export default function BillingRules({ api, clients, refreshKey, initialRules, i
                     <td>{r.treatment || '—'}</td>
                     <td>{r.tds_status || '—'}</td>
                     <td>{r.next_due_ad ? dateLabel(r.next_due_ad) : '—'}</td>
+                    <td>
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-primary"
+                        onClick={() => onIssueInvoice && onIssueInvoice(r, clientNames[r.client_id] || '')}
+                      >
+                        Issue invoice
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>

@@ -11,8 +11,34 @@ function FieldError({ msg }) {
   return msg ? <small className="form-text text-danger">{msg}</small> : null;
 }
 
-export default function Billing({ api, clients, openInvoices, meta, onWrote }) {
+/* The invoice form's fill from one billing rule: the service, amount
+   and treatment the rule carries. When the rule is among the
+   client's active rules it is also the selected rule in the Service
+   dropdown; otherwise (inactive, or a no-billing rule) the service
+   is free text and only the fields fill. The amount stays blank when
+   the rule has none (e.g. a cost-share on actuals). */
+export function prefillFromRule(rule, activeRules) {
+  if (!rule) return { ruleId: '', service: '', amount: '', treatment: 'vat_tds' };
+  const inDropdown = (activeRules || []).some((r) => String(r.id) === String(rule.id));
+  return {
+    ruleId: inDropdown ? String(rule.id) : '',
+    service: rule.service || '',
+    amount: (rule.amount_npr !== null && rule.amount_npr !== undefined)
+      ? String(rule.amount_npr)
+      : '',
+    treatment: rule.treatment || 'vat_tds',
+  };
+}
+
+export default function Billing({ api, clients, openInvoices, meta, onWrote, prefill, onPrefillApplied }) {
   const [invClient, setInvClient] = useState('');
+  /* The client picked by an "Issue invoice" button (the Billing rules
+     tab) when that client is not Active — the Client dropdown only
+     lists Active clients, so the name is kept here to show the picked
+     client as a one-off option. */
+  const [prefillClientName, setPrefillClientName] = useState('');
+  /* A rule waiting to fill the form once its client's rules load. */
+  const [pendingRule, setPendingRule] = useState(null);
   /* The selected client's billing rules (their services). Loaded from
      GET /billing-rules?client_id=…&status=active when the client
      changes; the service, amount and treatment fill in from the rule. */
@@ -91,20 +117,36 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote }) {
   function handleRuleChange(ruleId) {
     setSelectedRule(ruleId);
     const rule = rules.find((r) => String(r.id) === String(ruleId)) || null;
-    if (!rule) {
-      setInvService('');
-      setInvAmount('');
-      setInvTreatment('vat_tds');
-      return;
-    }
-    setInvService(rule.service || '');
-    /* Some rules have no fixed amount (e.g. a cost-share on actuals) —
-       leave the amount for the user to type in that case. */
-    if (rule.amount_npr !== null && rule.amount_npr !== undefined) {
-      setInvAmount(String(rule.amount_npr));
-    }
-    if (rule.treatment) setInvTreatment(rule.treatment);
+    const fill = prefillFromRule(rule, rules);
+    setInvService(fill.service);
+    setInvAmount(fill.amount);
+    setInvTreatment(fill.treatment);
   }
+
+  /* "Issue invoice" from the Billing rules tab: the rule arrives as a
+     prefill (client + rule). Pick the client first — its active rules
+     load — then fill the form from the rule once they are in. */
+  useEffect(() => {
+    if (!prefill || !prefill.rule) return;
+    setPrefillClientName(prefill.clientName || '');
+    setPendingRule(prefill.rule);
+    handleClientChange(String(prefill.clientId));
+    // handleClientChange is stable enough for this one-shot effect.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefill]);
+
+  useEffect(() => {
+    if (!pendingRule || rulesLoading) return;
+    const fill = prefillFromRule(pendingRule, rules);
+    setSelectedRule(fill.ruleId);
+    setInvService(fill.service);
+    setInvAmount(fill.amount);
+    setInvTreatment(fill.treatment);
+    setPendingRule(null);
+    if (onPrefillApplied) onPrefillApplied();
+    // Runs when the rules for the prefilled client finish loading.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rules, rulesLoading, pendingRule]);
 
   const selectedOpenInvoice = openInvoices.find(
     (inv) => String(inv.id) === String(payInvoiceId),
@@ -238,9 +280,13 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote }) {
                     id="invClient"
                     className="form-control"
                     value={invClient}
-                    onChange={(e) => handleClientChange(e.target.value)}
+                    onChange={(e) => { setPrefillClientName(''); handleClientChange(e.target.value); }}
                   >
                     <option value="">Pick a client…</option>
+                    {invClient && prefillClientName &&
+                      !activeClients.some((c) => String(c.id) === String(invClient)) && (
+                      <option value={invClient}>{prefillClientName}</option>
+                    )}
                     {activeClients.length ? (
                       activeClients.map((c) => (
                         <option key={c.id} value={c.id}>

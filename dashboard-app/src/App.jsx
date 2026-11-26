@@ -133,6 +133,10 @@ export default function App() {
   const [pettyRefresh, setPettyRefresh] = useState(0);
   const [ledgerRefresh, setLedgerRefresh] = useState(0);
   const [rulesRefresh, setRulesRefresh] = useState(0);
+  /* A billing rule picked for "Issue invoice" — the Billing form
+     opens with the rule's client, service, amount and treatment
+     filled in, all editable. */
+  const [billingPrefill, setBillingPrefill] = useState(null);
   const [fy, setFy] = useState('');
 
   /* The one fiscal-year picker, like Laravel's top-bar picker: it
@@ -239,6 +243,13 @@ export default function App() {
     setPettyRefresh((n) => n + 1);
     setLedgerRefresh((n) => n + 1);
     loadOpenInvoices();
+  }
+
+  /* "Issue invoice" from a billing rule: open the Billing tab with
+     the rule's client, service, amount and treatment filled in. */
+  function issueInvoiceFromRule(rule, clientName) {
+    setBillingPrefill({ clientId: rule.client_id, clientName, rule });
+    selectTab('billing');
   }
 
   function signOut() {
@@ -409,7 +420,12 @@ export default function App() {
                       <VendorBills api={api} refreshKey={ledgerRefresh} />
                     )}
                     {activeTab === 'rules' && (
-                      <BillingRules api={api} clients={clients} refreshKey={rulesRefresh} />
+                      <BillingRules
+                        api={api}
+                        clients={clients}
+                        refreshKey={rulesRefresh}
+                        onIssueInvoice={issueInvoiceFromRule}
+                      />
                     )}
                     {activeTab === 'billing' && (
                       <Billing
@@ -418,6 +434,8 @@ export default function App() {
                         openInvoices={openInvoices}
                         meta={meta}
                         onWrote={handleWrote}
+                        prefill={billingPrefill}
+                        onPrefillApplied={() => setBillingPrefill(null)}
                       />
                     )}
                   </div>
