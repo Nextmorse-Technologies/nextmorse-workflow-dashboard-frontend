@@ -9,6 +9,7 @@ import Overview from './components/Overview.jsx';
 import Tax from './components/Tax.jsx';
 import Bank from './components/Bank.jsx';
 import Invoices from './components/Invoices.jsx';
+import Receipts from './components/Receipts.jsx';
 import Reports from './components/Reports.jsx';
 import Billing from './components/Billing.jsx';
 
@@ -17,6 +18,7 @@ const TABS = [
   { key: 'tax', label: 'Tax' },
   { key: 'bank', label: 'Bank' },
   { key: 'invoices', label: 'Invoices' },
+  { key: 'receipts', label: 'Receipts' },
   { key: 'reports', label: 'Reports' },
   { key: 'billing', label: 'Billing' },
 ];
@@ -161,6 +163,9 @@ export default function App() {
       } else if (key === 'reports') {
         const d = await api('/reports');
         setSections((s) => ({ ...s, reports: d }));
+      } else if (key === 'receipts') {
+        const d = await api('/receipts?per_page=50');
+        setSections((s) => ({ ...s, receipts: d }));
       } else if (key === 'billing') {
         await Promise.all([loadClients(), loadOpenInvoices()]);
       }
@@ -191,13 +196,15 @@ export default function App() {
     }
   }
 
-  /* A write happened: the open-invoice lists and the invoice sections
-     are stale — refresh the pickers and drop the cached invoice data. */
+  /* A write happened: the open-invoice lists and the invoice and
+     receipt sections are stale — refresh the pickers and drop the
+     cached invoice/receipt data. */
   function handleWrote() {
     setSections((s) => {
       const next = { ...s };
       delete next.invoices;
       delete next.openList;
+      delete next.receipts;
       return next;
     });
     loadOpenInvoices();
@@ -330,6 +337,9 @@ export default function App() {
                     {activeTab === 'bank' && <Bank data={sections.bank} />}
                     {activeTab === 'invoices' && (
                       <Invoices summary={sections.invoices} openList={sections.openList} />
+                    )}
+                    {activeTab === 'receipts' && (
+                      <Receipts data={sections.receipts} />
                     )}
                     {activeTab === 'reports' && <Reports data={sections.reports} />}
                     {activeTab === 'billing' && (
