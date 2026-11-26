@@ -73,6 +73,18 @@ export function showRuleFilledNote({ selectedRule, serviceAttached }) {
   );
 }
 
+/* The "A new service, not one of the listed rules" note under the
+   Service field: it shows only when the line was typed in via Other.
+   An attached service also lands in the text field (selectedRule is
+   OTHER there), but it came FROM the listed rules — the note must
+   not claim otherwise. */
+export function showTypedServiceNote({ hasClient, rules, selectedRule, serviceAttached }) {
+  return Boolean(
+    hasClient && selectedRule === SERVICE_OTHER && !serviceAttached &&
+    (rules || []).length > 0,
+  );
+}
+
 export const SERVICE_OTHER = '__other';
 export const SERVICE_ATTACH = '__attach';
 export function serviceFieldMode({ hasClient, rulesLoading, rules, selectedRule }) {
@@ -306,7 +318,10 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
         await Promise.all(missing.map(async (id) => {
           try {
             const one = await api('/clients/' + id);
-            names[id] = (one && one.data && one.data.name) || '';
+            /* The client show endpoint nests the record under
+               `client`, not `data` — read both shapes. */
+            const rec = (one && (one.client || one.data)) || {};
+            names[id] = rec.name || '';
           } catch (err) { /* the option still shows, without a name */ }
         }));
       }
@@ -852,7 +867,7 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
                               />
                             </>
                           )}
-                          {invClient && line.selectedRule === SERVICE_OTHER && rules.length > 0 && (
+                          {showTypedServiceNote({ hasClient: !!invClient, rules, selectedRule: line.selectedRule, serviceAttached: line.serviceAttached }) && (
                             <small className="form-text text-muted">
                               A new service, not one of the listed rules.{' '}
                               <button

@@ -33,8 +33,11 @@ export default function BillingRules({ api, clients, refreshKey, onIssueInvoice,
         await Promise.all(missing.map(async (id) => {
           try {
             const one = await api('/clients/' + id);
-            if (one && one.data && one.data.name) fetched[id] = one.data.name;
-            if (one && one.data && one.data.domain) fetchedDomains[id] = one.data.domain;
+            /* The client show endpoint nests the record under
+               `client`, not `data` — read both shapes. */
+            const rec = (one && (one.client || one.data)) || {};
+            if (rec.name) fetched[id] = rec.name;
+            if (rec.domain) fetchedDomains[id] = rec.domain;
           } catch (e) { /* leave unknown — shown as — */ }
         }));
         if (cancelled) return;
