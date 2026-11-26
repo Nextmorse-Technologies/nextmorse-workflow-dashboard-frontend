@@ -1,6 +1,7 @@
 import { money } from '../api.js';
 import Reports from './Reports.jsx';
 import Ledger from './Ledger.jsx';
+import VendorBills from './VendorBills.jsx';
 
 function FigureCard({ title, value }) {
   return (
@@ -69,6 +70,11 @@ export default function Overview({ data, api, fy, refreshKey }) {
           Laravel /ledger page, from the API. */}
       <div className="mt-5">
         <Ledger api={api} fy={fy} refreshKey={refreshKey} />
+      </div>
+      {/* Vendor bills, after the ledger — the same sections as the
+          Laravel /billing/vendors page, from the API. */}
+      <div className="mt-5">
+        <VendorBills api={api} refreshKey={refreshKey} />
       </div>
     </>
   );
