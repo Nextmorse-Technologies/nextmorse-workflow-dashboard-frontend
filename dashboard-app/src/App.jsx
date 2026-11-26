@@ -11,6 +11,7 @@ import Bank from './components/Bank.jsx';
 import Invoices from './components/Invoices.jsx';
 import Reports from './components/Reports.jsx';
 import Billing from './components/Billing.jsx';
+import Login from './components/Login.jsx';
 
 const TABS = [
   { key: 'overview', label: 'Overview' },
@@ -294,6 +295,23 @@ export default function App() {
     if (!sections[loadedKey]) loadSection(key);
   }
 
+  /* Not signed in: the login page only — the API connection lives there.
+     After sign-in the app switches to the dashboard, with no connect card. */
+  if (!signedIn) {
+    return (
+      <Login
+        baseInput={baseInput}
+        setBaseInput={setBaseInput}
+        tokenInput={tokenInput}
+        setTokenInput={setTokenInput}
+        onSignIn={signIn}
+        loading={loading}
+        error={signinError}
+        status={signinStatus}
+      />
+    );
+  }
+
   return (
     <>
       <Header />
@@ -311,91 +329,28 @@ export default function App() {
             </div>
           </div>
 
-          {/* Sign in: API address + token. Typed in, kept in this tab only. */}
+          {/* Dashboard sections */}
           <div className="row justify-content-center">
-            <div className="col-lg-10">
-              <div className="card mb-4">
-                <div className="card-body">
-                  <h5 className="card-title">Connect to the API</h5>
-                  <p className="text-muted small">
-                    Type the API base URL and your API token. Both are kept in this
-                    tab only (sessionStorage) and are sent only to the base URL you
-                    set, as an Authorization header. Nothing is written into this page.
-                  </p>
-                  <div className="form-row">
-                    <div className="col-md-5 mb-3">
-                      <label htmlFor="apiBase">API base URL</label>
-                      <input
-                        id="apiBase"
-                        className="form-control"
-                        type="url"
-                        placeholder="https://nextmorse-dashboard.onrender.com"
-                        autoComplete="off"
-                        value={baseInput}
-                        onChange={(e) => setBaseInput(e.target.value)}
-                      />
-                      <small className="form-text text-muted">
-                        The API currently runs on the Render dashboard; it will move to
-                        poudelbijaya.com.np.
-                      </small>
-                    </div>
-                    <div className="col-md-4 mb-3">
-                      <label htmlFor="apiToken">API token</label>
-                      <input
-                        id="apiToken"
-                        className="form-control"
-                        type="password"
-                        placeholder="Paste your API token"
-                        autoComplete="off"
-                        value={tokenInput}
-                        onChange={(e) => setTokenInput(e.target.value)}
-                      />
-                    </div>
-                    <div className="col-md-3 mb-3 d-flex align-items-end">
-                      <button
-                        className="btn btn-primary btn-block"
-                        type="button"
-                        onClick={signIn}
-                        disabled={loading}
-                      >
-                        {signedIn ? 'Reload dashboard' : 'Load dashboard'}
-                      </button>
-                    </div>
-                  </div>
-                  {signinError && (
-                    <div className="alert alert-danger" role="alert">{signinError}</div>
-                  )}
-                  <div className="d-flex justify-content-between align-items-center">
-                    <small className="text-muted">{signinStatus}</small>
-                    {signedIn && (
-                      <button
-                        className="btn btn-outline-secondary btn-sm"
-                        type="button"
-                        onClick={signOut}
-                      >
-                        Sign out
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Dashboard sections (shown after sign in) */}
-          {signedIn && (
-            <div className="row justify-content-center">
-              <div className="col-lg-12">
-                <div className="d-flex justify-content-between align-items-center mb-3">
-                  <small className="text-muted">{dashStatus}</small>
+            <div className="col-lg-12">
+              <div className="d-flex justify-content-between align-items-center mb-3">
+                <small className="text-muted">{dashStatus}</small>
+                <div>
                   <button
-                    className="btn btn-outline-secondary btn-sm"
+                    className="btn btn-outline-secondary btn-sm mr-2"
                     type="button"
                     onClick={() => loadSection(activeTab)}
                   >
                     Reload
                   </button>
+                  <button
+                    className="btn btn-outline-secondary btn-sm"
+                    type="button"
+                    onClick={signOut}
+                  >
+                    Sign out
+                  </button>
                 </div>
+              </div>
                 {dashError && (
                   <div className="alert alert-danger" role="alert">{dashError}</div>
                 )}
@@ -444,8 +399,7 @@ export default function App() {
                 </p>
               </div>
             </div>
-          )}
-        </div>
+          </div>
       </section>
       <Footer />
       <div
