@@ -22,8 +22,8 @@ const TABS = [
   { key: 'invoices', label: 'Invoices' },
   { key: 'receipts', label: 'Receipts' },
   { key: 'petty', label: 'Petty cash' },
-  { key: 'reports', label: 'Reports' },
   { key: 'billing', label: 'Billing' },
+  { key: 'reports', label: 'Reports' },
 ];
 
 function Header({ signedIn, onReload, onSignOut }) {
