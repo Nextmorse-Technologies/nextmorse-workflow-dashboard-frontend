@@ -133,6 +133,7 @@ export default function App() {
   const [pettyRefresh, setPettyRefresh] = useState(0);
   const [ledgerRefresh, setLedgerRefresh] = useState(0);
   const [rulesRefresh, setRulesRefresh] = useState(0);
+  const [vendorRefresh, setVendorRefresh] = useState(0);
   /* A billing rule picked for "Issue invoice" — the Billing form
      opens with the rule's client, service, amount, treatment, due
      date and domain filled in, all editable. */
@@ -201,6 +202,9 @@ export default function App() {
         setSections((s) => ({ ...s, receipts: d }));
       } else if (key === 'billing') {
         await Promise.all([loadClients(), loadOpenInvoices()]);
+        /* The Billing tab's vendor receipt form loads its own open
+           vendor bills; a refresh tells it to fetch again. */
+        setVendorRefresh((n) => n + 1);
       }
       setDashStatus('Loaded ' + key + ' · ' + new Date().toLocaleTimeString());
     } catch (err) {
@@ -230,8 +234,9 @@ export default function App() {
   }
 
   /* A write happened: the open-invoice pickers and the invoice,
-     receipt and petty cash sections are stale — refresh the pickers
-     and tell the Invoices, Receipts and Petty cash tabs to fetch
+     receipt, petty cash and vendor sections are stale — refresh the
+     pickers and tell the Invoices, Receipts, Petty cash and Vendor
+     bills tabs (and the Billing tab's vendor receipt form) to fetch
      again. */
   function handleWrote() {
     setSections((s) => {
@@ -242,6 +247,7 @@ export default function App() {
     setInvoicesRefresh((n) => n + 1);
     setPettyRefresh((n) => n + 1);
     setLedgerRefresh((n) => n + 1);
+    setVendorRefresh((n) => n + 1);
     loadOpenInvoices();
   }
 
@@ -437,6 +443,7 @@ export default function App() {
                         onWrote={handleWrote}
                         prefill={billingPrefill}
                         onPrefillApplied={() => setBillingPrefill(null)}
+                        vendorRefresh={vendorRefresh}
                       />
                     )}
                   </div>
