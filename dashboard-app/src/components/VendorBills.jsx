@@ -75,7 +75,7 @@ export default function VendorBills({ api, refreshKey, initialBills, initialSupp
                 <thead>
                   <tr>
                     <th>Invoice no.</th>
-                    <th>Client</th>
+                    <th>Supplier</th>
                     <th>Service</th>
                     <th className="text-right">Amount</th>
                     <th>Status</th>
