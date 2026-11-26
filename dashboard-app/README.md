@@ -32,9 +32,11 @@ Flaticon, the fonts and the logo), and Vite copies them into `dist/`.
 So the same build runs on Netlify, on nextmorse.com, or anywhere else
 — it does not borrow the site's files at run time. The API still runs
 on the Render dashboard for now (it will move to
-poudelbijaya.com.np) — type the API base URL and your token into the
-page; nothing is hardcoded, and both live in `sessionStorage` (this
-tab only).
+poudelbijaya.com.np) — sign in at `/login` (repo-root `login.html`)
+with the API base URL and your token; it checks them against the API
+and then sends you to `/dashboard/`. Nothing is hardcoded, and both
+live in `sessionStorage` (this tab only). Opening `/dashboard/` while
+signed out sends you to `/login`.
 
 ## Netlify (GitHub-connected deploys)
 

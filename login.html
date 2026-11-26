@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="description" content="Nextmorse Dashboard — sign in to the unified API" />
+    <meta name="author" content="nextmorse.com" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <title>Dashboard login — Nextmorse Technologies</title>
+
+    <!-- Favicon -->
+    <link rel="shortcut icon" href="/images/favicon.ico" />
+
+    <!-- Google Font -->
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Titillium+Web:200,300,400,600,700&amp;display=swap" />
+    <!-- CSS Global Compulsory (Do not remove)-->
+    <link rel="stylesheet" href="/css/bootstrap/bootstrap.min.css" />
+
+    <style>
+      body { background: #0f172a; font-family: 'Titillium Web', sans-serif; }
+      .login-page {
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px 16px;
+      }
+      .login-card {
+        width: 100%;
+        max-width: 400px;
+        background: #ffffff;
+        border-radius: 12px;
+        padding: 32px 28px;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+      }
+      .login-logo {
+        display: inline-block;
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        padding: 8px 12px;
+      }
+      .login-logo img { height: 36px; display: block; }
+      .login-note { color: #94a3b8; font-size: 12px; text-align: center; }
+    </style>
+  </head>
+  <body>
+    <div class="login-page">
+      <div class="login-card">
+        <div class="text-center mb-4">
+          <span class="login-logo">
+            <img src="/images/logo.svg" alt="Nextmorse" />
+          </span>
+          <h1 class="h4 mt-3 mb-1">Dashboard login</h1>
+          <p class="text-muted mb-0">Nextmorse Technologies Pvt. Ltd.</p>
+        </div>
+
+        <form id="loginForm" novalidate>
+          <div class="form-group">
+            <label for="apiBase">API base URL</label>
+            <input id="apiBase" class="form-control" type="url"
+              placeholder="https://nextmorse-dashboard.onrender.com" autocomplete="off" />
+            <small class="form-text text-muted">
+              The API currently runs on the Render dashboard; it will move to
+              poudelbijaya.com.np.
+            </small>
+          </div>
+          <div class="form-group">
+            <label for="apiToken">API token</label>
+            <input id="apiToken" class="form-control" type="password"
+              placeholder="Paste your API token" autocomplete="off" autofocus />
+          </div>
+          <div id="loginError" class="alert alert-danger d-none" role="alert"></div>
+          <button id="loginBtn" class="btn btn-primary btn-block" type="submit">Sign in</button>
+        </form>
+
+        <p class="login-note mt-3 mb-0">
+          <span id="loginStatus">Enter the API base URL and your token, then sign in.</span><br />
+          The address and token are kept in this tab only and are sent only to
+          the address you set.
+        </p>
+      </div>
+    </div>
+
+    <script>
+      /* Dashboard login: the API connection lives here, at /login.
+         On a good sign-in the address + token are kept in this tab only
+         (sessionStorage) and the browser goes to /dashboard/. */
+      (function () {
+        var SS_BASE = 'nextmorse_dash_base';
+        var SS_TOKEN = 'nextmorse_dash_token';
+        var form = document.getElementById('loginForm');
+        var baseInput = document.getElementById('apiBase');
+        var tokenInput = document.getElementById('apiToken');
+        var errorBox = document.getElementById('loginError');
+        var statusLine = document.getElementById('loginStatus');
+        var button = document.getElementById('loginBtn');
+
+        /* Already signed in (this tab)? Go straight to the dashboard. */
+        try {
+          if (sessionStorage.getItem(SS_BASE) && sessionStorage.getItem(SS_TOKEN)) {
+            window.location.replace('/dashboard/');
+            return;
+          }
+        } catch (e) { /* private mode: stay on the form */ }
+
+        function showError(msg) {
+          errorBox.textContent = msg;
+          errorBox.classList.remove('d-none');
+        }
+
+        form.addEventListener('submit', function (e) {
+          e.preventDefault();
+          errorBox.classList.add('d-none');
+          var base = baseInput.value.trim().replace(/\/+$/, '');
+          var token = tokenInput.value.trim();
+          if (!base) { showError('Enter the API base URL first — e.g. the Render dashboard address.'); return; }
+          if (base.indexOf('http://') !== 0 && base.indexOf('https://') !== 0) {
+            showError('Enter a full API base URL starting with https://');
+            return;
+          }
+          if (!token) { showError('Paste your API token first.'); return; }
+
+          button.disabled = true;
+          button.textContent = 'Signing in…';
+          statusLine.textContent = 'Checking the API…';
+
+          fetch(base + '/api/v1/meta', {
+            headers: { Accept: 'application/json', Authorization: 'Bearer ' + token },
+          })
+            .then(function (res) {
+              if (!res.ok) {
+                if (res.status === 401) throw new Error('That token was not accepted (401). Check the token and try again.');
+                if (res.status === 503) throw new Error('The API has no token configured (503). Ask whoever runs the API to set one.');
+                throw new Error('The API answered with status ' + res.status + '.');
+              }
+              return res.json();
+            })
+            .then(function () {
+              try {
+                sessionStorage.setItem(SS_BASE, base);
+                sessionStorage.setItem(SS_TOKEN, token);
+              } catch (err) { /* private mode: keep going without saving */ }
+              window.location.href = '/dashboard/';
+            })
+            .catch(function (err) {
+              if (err && err.name === 'TypeError') {
+                showError('Could not reach the API. Check the API base URL, and that the API is running.');
+              } else {
+                showError(err.message || 'Something went wrong.');
+              }
+              statusLine.textContent = 'Not signed in yet.';
+              button.disabled = false;
+              button.textContent = 'Sign in';
+            });
+        });
+      })();
+    </script>
+  </body>
+</html>

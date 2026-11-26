@@ -11,7 +11,6 @@ import Bank from './components/Bank.jsx';
 import Invoices from './components/Invoices.jsx';
 import Reports from './components/Reports.jsx';
 import Billing from './components/Billing.jsx';
-import Login from './components/Login.jsx';
 
 const TABS = [
   { key: 'overview', label: 'Overview' },
@@ -92,14 +91,8 @@ function Footer() {
 }
 
 export default function App() {
-  const [baseInput, setBaseInput] = useState('');
-  const [tokenInput, setTokenInput] = useState('');
   const [signedIn, setSignedIn] = useState(false);
-  const [signinError, setSigninError] = useState('');
-  const [signinStatus, setSigninStatus] = useState(
-    'Enter the API base URL and your token, then load.',
-  );
-  const [loading, setLoading] = useState(false);
+  const [authChecked, setAuthChecked] = useState(false);
   const [dashStatus, setDashStatus] = useState('');
   const [dashError, setDashError] = useState('');
   const [activeTab, setActiveTab] = useState('overview');
@@ -186,49 +179,6 @@ export default function App() {
     loadOpenInvoices();
   }
 
-  async function signIn() {
-    setSigninError('');
-    const base = baseInput.trim().replace(/\/+$/, '');
-    const token = tokenInput.trim();
-    if (!base) {
-      setSigninError('Enter the API base URL first — e.g. the Render dashboard address.');
-      return;
-    }
-    if (!base.startsWith('http://') && !base.startsWith('https://')) {
-      setSigninError('Enter a full API base URL starting with https://');
-      return;
-    }
-    if (!token) {
-      setSigninError('Paste your API token first.');
-      return;
-    }
-    authRef.current = { base, token };
-    try {
-      sessionStorage.setItem(SS_BASE, base);
-      sessionStorage.setItem(SS_TOKEN, token);
-    } catch (e) { /* private mode: keep going without saving */ }
-
-    setSigninStatus('Loading…');
-    setLoading(true);
-    try {
-      const resp = await api('/meta');
-      setMeta((resp && resp.data) || null);
-      const d = await api('/dashboard');
-      setSections((s) => ({ ...s, overview: d }));
-      if (d && d.verified_at) setVerifiedAt(d.verified_at);
-      if (d && d.source) setDashSource('Source: ' + d.source);
-      setSignedIn(true);
-      setSigninStatus('Loaded. Click Reload to refresh.');
-      loadClients();
-      loadOpenInvoices();
-    } catch (err) {
-      setSigninError(friendlyError(err));
-      setSigninStatus('Not loaded yet.');
-    } finally {
-      setLoading(false);
-    }
-  }
-
   function signOut() {
     try {
       sessionStorage.removeItem(SS_BASE);
@@ -239,17 +189,17 @@ export default function App() {
     setClients([]);
     setOpenInvoices([]);
     setSections({});
-    setTokenInput('');
-    setSigninError('');
     setDashError('');
-    setSigninStatus('Signed out. Enter the API base URL and your token, then load.');
     setDashStatus('');
     setVerifiedAt('');
     setDashSource('');
     setSignedIn(false);
+    window.location.replace('/login');
   }
 
-  /* Restore a tab session (token + base live in sessionStorage only). */
+  /* Sign-in lives at /login now. This page restores the tab session
+     (token + base live in sessionStorage only); without one it sends
+     the browser to /login, and a rejected token does the same. */
   useEffect(() => {
     let savedBase = null;
     let savedToken = null;
@@ -257,32 +207,32 @@ export default function App() {
       savedBase = sessionStorage.getItem(SS_BASE);
       savedToken = sessionStorage.getItem(SS_TOKEN);
     } catch (e) { /* private mode */ }
-    if (savedBase) setBaseInput(savedBase);
-    if (savedToken) setTokenInput(savedToken);
-    if (savedBase && savedToken) {
-      authRef.current = { base: savedBase, token: savedToken };
-      setSigninStatus('Loading…');
-      setLoading(true);
-      api('/meta')
-        .then((resp) => {
-          setMeta((resp && resp.data) || null);
-          return api('/dashboard');
-        })
-        .then((d) => {
-          setSections((s) => ({ ...s, overview: d }));
-          if (d && d.verified_at) setVerifiedAt(d.verified_at);
-          if (d && d.source) setDashSource('Source: ' + d.source);
-          setSignedIn(true);
-          setSigninStatus('Loaded. Click Reload to refresh.');
-          loadClients();
-          loadOpenInvoices();
-        })
-        .catch((err) => {
-          setSigninError(friendlyError(err));
-          setSigninStatus('Not loaded yet.');
-        })
-        .finally(() => setLoading(false));
+    if (!savedBase || !savedToken) {
+      window.location.replace('/login');
+      return;
     }
+    authRef.current = { base: savedBase, token: savedToken };
+    api('/meta')
+      .then((resp) => {
+        setMeta((resp && resp.data) || null);
+        return api('/dashboard');
+      })
+      .then((d) => {
+        setSections((s) => ({ ...s, overview: d }));
+        if (d && d.verified_at) setVerifiedAt(d.verified_at);
+        if (d && d.source) setDashSource('Source: ' + d.source);
+        setSignedIn(true);
+        setAuthChecked(true);
+        loadClients();
+        loadOpenInvoices();
+      })
+      .catch(() => {
+        try {
+          sessionStorage.removeItem(SS_BASE);
+          sessionStorage.removeItem(SS_TOKEN);
+        } catch (e) { /* ignore */ }
+        window.location.replace('/login');
+      })
     // Run once on mount; api/loadClients/loadOpenInvoices are stable enough.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -295,20 +245,22 @@ export default function App() {
     if (!sections[loadedKey]) loadSection(key);
   }
 
-  /* Not signed in: the login page only — the API connection lives there.
-     After sign-in the app switches to the dashboard, with no connect card. */
-  if (!signedIn) {
+  /* While the session is being checked, show nothing but a loader —
+     the dashboard itself only renders once signed in. */
+  if (!authChecked) {
     return (
-      <Login
-        baseInput={baseInput}
-        setBaseInput={setBaseInput}
-        tokenInput={tokenInput}
-        setTokenInput={setTokenInput}
-        onSignIn={signIn}
-        loading={loading}
-        error={signinError}
-        status={signinStatus}
-      />
+      <div
+        style={{
+          minHeight: '100vh',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: '#0f172a',
+          color: '#94a3b8',
+        }}
+      >
+        Loading…
+      </div>
     );
   }
 
