@@ -39,11 +39,13 @@ tab only).
 ## Netlify (GitHub-connected deploys)
 
 Connect this repo in Netlify so every push to `main` deploys
-automatically. Build settings in Netlify:
+automatically. The site is the full website — the homepage is
+nextmorse.com's homepage, and the dashboard lives at `/dashboard/`.
+Build settings in Netlify:
 
-- Base directory: `dashboard-app`
-- Build command: `npm run build`
-- Publish directory: `dashboard-app/dist`
+- Base directory: (none — the repo root)
+- Build command: `npm --prefix dashboard-app ci && npm --prefix dashboard-app run build && rm -rf dashboard && cp -r dashboard-app/dist dashboard`
+- Publish directory: `.` (the repo root)
 
 The first live deploy was a drag-and-drop of `dist/` to
 luminous-lollipop-ab1773.netlify.app (26 Nov 2026); the GitHub-connected
