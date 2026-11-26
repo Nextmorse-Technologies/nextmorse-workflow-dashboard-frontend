@@ -48,6 +48,39 @@ export function serviceFieldMode({ hasClient, rulesLoading, rules, selectedRule 
   return 'text';
 }
 
+/* The services that can be attached to a client with no rules of
+   their own: every billing rule that has an amount — the amount is
+   what makes it a real service or AMC. The two no-billing rules
+   (Mountain Fund, Anishma) and the NOSHA cost-share rule have no
+   amount, so they are not attachable. Status does not matter: an
+   inactive rule is still a real service. Order matches the Billing
+   rules tab: by client, then rule. */
+export function attachableRules(allRules) {
+  return (allRules || [])
+    .filter((r) => r && r.service && r.amount_npr !== null && r.amount_npr !== undefined)
+    .sort((a, b) => (a.client_id - b.client_id) || (a.id - b.id));
+}
+
+/* Fill the form from an existing rule attached to this client: the
+   service, amount and treatment come from that rule. The due date
+   does NOT come over — the other client's next due date is not this
+   client's — so it stays blank to fill in. The domain comes from the
+   service text when it names one, else the client's own domain. */
+export function attachServiceFromRule(rule, clientDomain) {
+  if (!rule) {
+    return { service: '', amount: '', treatment: 'vat_tds', domain: '' };
+  }
+  const named = (rule.service || '').match(/[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}/i);
+  return {
+    service: rule.service || '',
+    amount: (rule.amount_npr !== null && rule.amount_npr !== undefined)
+      ? String(rule.amount_npr)
+      : '',
+    treatment: rule.treatment || 'vat_tds',
+    domain: named ? named[0] : (clientDomain || ''),
+  };
+}
+
 export default function Billing({ api, clients, openInvoices, meta, onWrote, prefill, onPrefillApplied }) {
   const [invClient, setInvClient] = useState('');
   /* The client picked by an "Issue invoice" button (the Billing rules
@@ -64,6 +97,15 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
   const [rulesLoading, setRulesLoading] = useState(false);
   const [rulesError, setRulesError] = useState('');
   const [selectedRule, setSelectedRule] = useState('');
+  /* Every billing rule, for attaching an existing service or AMC to
+     a client with no rules of their own. Loaded once, the first time
+     such a client is picked. */
+  const [allRules, setAllRules] = useState([]);
+  const [allRulesLoaded, setAllRulesLoaded] = useState(false);
+  /* Names of rule owners that are not Active clients (the client
+     list only carries Active ones) — fetched per id, like the
+     Billing rules tab does. */
+  const [allRuleNames, setAllRuleNames] = useState({});
   const [invService, setInvService] = useState('');
   const [invAmount, setInvAmount] = useState('');
   const [invTreatment, setInvTreatment] = useState('vat_tds');
@@ -115,13 +157,67 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
       const resp = await api(
         '/billing-rules?client_id=' + clientId + '&status=active&per_page=100',
       );
-      setRules((resp && resp.data) || []);
+      const rows = (resp && resp.data) || [];
+      setRules(rows);
+      /* No rules of their own: fetch every rule once, so an existing
+         service or AMC can be attached to this client instead. */
+      if (rows.length === 0) loadAllRules();
     } catch (err) {
       /* No rules, no problem: the service stays a free-text field. */
       setRulesError(friendlyError(err));
     } finally {
       setRulesLoading(false);
     }
+  }
+
+  async function loadAllRules() {
+    if (allRulesLoaded) return;
+    setAllRulesLoaded(true);
+    try {
+      const resp = await api('/billing-rules?per_page=200');
+      const rows = (resp && resp.data) || [];
+      setAllRules(rows);
+      const known = {};
+      (clients || []).forEach((c) => { known[c.id] = c.name; });
+      const missing = [...new Set(rows.map((r) => r.client_id))].filter((id) => !known[id]);
+      if (missing.length > 0) {
+        const names = {};
+        await Promise.all(missing.map(async (id) => {
+          try {
+            const one = await api('/clients/' + id);
+            names[id] = (one && one.data && one.data.name) || '';
+          } catch (err) { /* the option still shows, without a name */ }
+        }));
+        setAllRuleNames(names);
+      }
+    } catch (err) {
+      /* Attaching stays unavailable; the free-text field still works. */
+    }
+  }
+
+  /* The attach dropdown's options: the attachable rules with their
+     owner's name, so two clients' same-named services stay apart. */
+  function ruleOwnerName(clientId) {
+    return (clients || []).find((c) => String(c.id) === String(clientId))?.name ||
+      allRuleNames[clientId] || '';
+  }
+  const attachOptions = attachableRules(allRules).map((r) => ({
+    id: r.id,
+    label: r.service + ' — ' + ruleOwnerName(r.client_id) + ' — ' + money(r.amount_npr),
+  }));
+
+  function handleAttach(ruleId) {
+    const rule = (allRules || []).find((r) => String(r.id) === String(ruleId)) || null;
+    const clientDomain = (clients || []).find((c) => String(c.id) === String(invClient))?.domain ||
+      (prefillClient && prefillClient.domain) || '';
+    const fill = attachServiceFromRule(rule, clientDomain);
+    setInvService(fill.service);
+    setInvAmount(fill.amount);
+    setInvTreatment(fill.treatment);
+    /* The due date stays blank: the other client's next due date is
+       not this client's. */
+    setInvDueDate('');
+    setInvDomain(fill.domain);
   }
 
   function handleClientChange(clientId) {
@@ -372,22 +468,39 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
                       <option value={SERVICE_OTHER}>Other — type a new service</option>
                     </select>
                   ) : (
-                    <input
-                      id="invService"
-                      className="form-control"
-                      type="text"
-                      placeholder={invClient
-                        ? 'e.g. Hosting renewal — example.com'
-                        : 'Pick a client first'}
-                      maxLength="1000"
-                      disabled={!invClient}
-                      value={invService}
-                      onChange={(e) => setInvService(e.target.value)}
-                    />
+                    <>
+                      {invClient && !rulesLoading && rules.length === 0 && attachOptions.length > 0 && (
+                        <select
+                          className="form-control mb-2"
+                          value=""
+                          onChange={(e) => { if (e.target.value) handleAttach(e.target.value); }}
+                          aria-label="Attach an existing service or AMC"
+                        >
+                          <option value="">Attach an existing service or AMC…</option>
+                          {attachOptions.map((o) => (
+                            <option key={o.id} value={o.id}>{o.label}</option>
+                          ))}
+                        </select>
+                      )}
+                      <input
+                        id="invService"
+                        className="form-control"
+                        type="text"
+                        placeholder={invClient
+                          ? 'e.g. Hosting renewal — example.com'
+                          : 'Pick a client first'}
+                        maxLength="1000"
+                        disabled={!invClient}
+                        value={invService}
+                        onChange={(e) => setInvService(e.target.value)}
+                      />
+                    </>
                   )}
                   {invClient && !rulesLoading && rules.length === 0 && (
                     <small className="form-text text-muted">
-                      No services on file for this client — type the service.
+                      {attachOptions.length > 0
+                        ? 'No services on file for this client — type a new service, or attach an existing one above.'
+                        : 'No services on file for this client — type the service.'}
                     </small>
                   )}
                   {invClient && selectedRule === SERVICE_OTHER && rules.length > 0 && (
