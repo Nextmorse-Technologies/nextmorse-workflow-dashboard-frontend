@@ -25,13 +25,16 @@ export default function Overview({ data, api, fy, refreshKey }) {
   return (
     <>
       <h3 className="h5">Headline figures</h3>
+      <p className="mb-3 text-muted small">Showing {fy === 'all' ? 'all years' : fy}.</p>
       <div className="row">
         <FigureCard title="Invoiced (confirmed)" value={money(at.invoiced_confirmed)} />
         <FigureCard title="Received" value={money(at.received)} />
         <FigureCard title="Paid out" value={money(at.paid_out)} />
         <FigureCard title="Net" value={money(at.net)} />
         <FigureCard title="Open receivables" value={money(at.open_receivables)} />
-        <FigureCard title="Bank balance" value={money(br.balance)} />
+        {/* The bank balance is the current balance — a balance, not a
+            year's amount — so it never follows the year picker. */}
+        <FigureCard title={fy && fy !== 'all' ? 'Bank balance (current)' : 'Bank balance'} value={money(br.balance)} />
         <FigureCard title="VAT payable" value={money(vat.payable)} />
         <FigureCard title="TDS payable" value={money(tds.payable)} />
       </div>

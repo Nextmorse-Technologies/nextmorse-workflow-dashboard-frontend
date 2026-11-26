@@ -163,6 +163,9 @@ export default function App() {
   const [dashSource, setDashSource] = useState('');
 
   const authRef = useRef({ base: '', token: '' });
+  /* The fiscal year the Overview section was loaded for; when the
+     picker changes to another year, the section reloads for it. */
+  const overviewFyRef = useRef(null);
   const apiClient = useMemo(
     () => createApiClient(() => authRef.current),
     [],
@@ -175,8 +178,11 @@ export default function App() {
     setDashStatus('Loading ' + key + '…');
     try {
       if (key === 'overview') {
-        const d = await api('/dashboard');
+        /* The headline figures follow the Fiscal year picker: the
+           API scopes them to the year (all years when 'all'). */
+        const d = await api('/dashboard' + (effectiveFy !== 'all' ? '?fiscal_year=' + encodeURIComponent(effectiveFy) : ''));
         setSections((s) => ({ ...s, overview: d }));
+        overviewFyRef.current = effectiveFy;
         setLedgerRefresh((n) => n + 1);
         if (d && d.verified_at) setVerifiedAt(d.verified_at);
         if (d && d.source) setDashSource('Source: ' + d.source);
@@ -298,8 +304,13 @@ export default function App() {
     authRef.current = { base: savedBase, token: savedToken };
     api('/meta')
       .then((resp) => {
-        setMeta((resp && resp.data) || null);
-        return api('/dashboard');
+        const metaData = (resp && resp.data) || null;
+        setMeta(metaData);
+        /* The overview loads straight for the current year, so the
+           picker and the figures agree from the first paint. */
+        const fyNow = (metaData && metaData.current_fiscal_year) || 'all';
+        overviewFyRef.current = fyNow;
+        return api('/dashboard' + (fyNow !== 'all' ? '?fiscal_year=' + encodeURIComponent(fyNow) : ''));
       })
       .then((d) => {
         setSections((s) => ({ ...s, overview: d }));
@@ -320,6 +331,15 @@ export default function App() {
     // Run once on mount; api/loadClients/loadOpenInvoices are stable enough.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /* The Overview tab follows the Fiscal year picker: when the year
+     changes after the section loaded, reload it for that year. */
+  useEffect(() => {
+    if (sections.overview && overviewFyRef.current !== null && overviewFyRef.current !== effectiveFy) {
+      loadSection('overview');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [effectiveFy]);
 
   function selectTab(key) {
     setActiveTab(key);
