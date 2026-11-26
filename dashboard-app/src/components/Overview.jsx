@@ -1,4 +1,5 @@
 import { money } from '../api.js';
+import Reports from './Reports.jsx';
 
 function FigureCard({ title, value }) {
   return (
@@ -57,6 +58,11 @@ export default function Overview({ data }) {
             ))}
           </tbody>
         </table>
+      </div>
+      {/* The report, last on this page — the same tables as the
+          Laravel /reports page, from the same payload. */}
+      <div className="mt-5">
+        <Reports data={data.reports} />
       </div>
     </>
   );

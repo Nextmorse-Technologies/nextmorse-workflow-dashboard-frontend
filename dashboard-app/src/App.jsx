@@ -12,7 +12,6 @@ import Bank from './components/Bank.jsx';
 import Invoices from './components/Invoices.jsx';
 import Receipts from './components/Receipts.jsx';
 import PettyCash from './components/PettyCash.jsx';
-import Reports from './components/Reports.jsx';
 import Billing from './components/Billing.jsx';
 
 const TABS = [
@@ -23,7 +22,6 @@ const TABS = [
   { key: 'receipts', label: 'Receipts' },
   { key: 'petty', label: 'Petty cash' },
   { key: 'billing', label: 'Billing' },
-  { key: 'reports', label: 'Reports' },
 ];
 
 function Header({ signedIn, onReload, onSignOut }) {
@@ -179,9 +177,6 @@ export default function App() {
         /* Same pattern as Invoices — the Petty cash tab loads its
            own lists; a refresh tells it to fetch again. */
         setPettyRefresh((n) => n + 1);
-      } else if (key === 'reports') {
-        const d = await api('/reports');
-        setSections((s) => ({ ...s, reports: d }));
       } else if (key === 'receipts') {
         const d = await api('/receipts?per_page=50');
         setSections((s) => ({ ...s, receipts: d }));
@@ -392,7 +387,6 @@ export default function App() {
                         fy={effectiveFy}
                       />
                     )}
-                    {activeTab === 'reports' && <Reports data={sections.reports} />}
                     {activeTab === 'billing' && (
                       <Billing
                         api={api}
