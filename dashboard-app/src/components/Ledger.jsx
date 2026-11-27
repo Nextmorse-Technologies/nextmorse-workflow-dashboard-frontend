@@ -10,34 +10,137 @@ import { bankForFy } from './Bank.jsx';
    fiscal-year picker, and so does the bank register table below;
    the ledger-vs-register comparison stays all-years — the ledger
    bank is cumulative cash from all invoice records (2020–2026),
-   so a one-year comparison against it would not balance. */
-export default function Ledger({ api, fy, refreshKey, initialTrial, initialAccounts, initialBalances, initialBank }) {
+   so a one-year comparison against it would not balance. The
+   Profit and Loss table at the bottom is calculated from the
+   invoice records (no journal entries) and follows the picker
+   too: one year picked shows that year only. */
+
+const EXPENSE_KIND = {
+  paid_rent: 'rent',
+  paid_salary: 'salaries',
+  paid_babal: 'hosting',
+  paid_supplier: 'suppliers',
+  paid_utility: 'utilities',
+};
+
+function round2(n) {
+  return Math.round(n * 100) / 100;
+}
+
+/* Profit and loss by fiscal year, calculated from the invoice
+   records — no journal entries, no sent-invoice ledger backfill
+   (Bijaya, 27 Nov 2026). Bucketed by the invoice's STORED
+   fiscal_year (not by date — the By fiscal year table buckets by
+   date, this one does not). Revenue is kind 'sent' only (the
+   mou_receivable rows are excluded); per row it is subtotal_npr
+   where set, else amount_npr − vat_npr (net of VAT). Expenses
+   are the gross amount_npr as recorded, by kind: paid_rent →
+   rent, paid_salary → salaries, paid_babal → hosting & domains,
+   paid_supplier → suppliers, paid_utility → utilities. One row
+   per fiscal year present in the invoices; a year with no sent
+   invoices still shows (revenue 0) when it has expense rows. */
+export function profitAndLoss(invoices) {
+  const byFy = {};
+  for (const inv of invoices || []) {
+    const fy = inv.fiscal_year;
+    if (!fy) continue;
+    const row = byFy[fy] || (byFy[fy] = {
+      fy, label: 'FY ' + fy,
+      revenue: 0, rent: 0, salaries: 0, hosting: 0,
+      suppliers: 0, utilities: 0,
+    });
+    if (inv.kind === 'sent') {
+      row.revenue += inv.subtotal_npr != null
+        ? Number(inv.subtotal_npr)
+        : (Number(inv.amount_npr) || 0) - (Number(inv.vat_npr) || 0);
+    } else {
+      const field = EXPENSE_KIND[inv.kind];
+      if (field) row[field] += Number(inv.amount_npr) || 0;
+    }
+  }
+  return Object.values(byFy)
+    .sort((a, b) => (a.fy < b.fy ? -1 : a.fy > b.fy ? 1 : 0))
+    .map((r) => {
+      const expenses = round2(r.rent + r.salaries + r.hosting + r.suppliers + r.utilities);
+      return {
+        fy: r.fy,
+        label: r.label,
+        revenue: round2(r.revenue),
+        rent: round2(r.rent),
+        salaries: round2(r.salaries),
+        hosting: round2(r.hosting),
+        suppliers: round2(r.suppliers),
+        utilities: round2(r.utilities),
+        expenses,
+        profit: round2(r.revenue - expenses),
+      };
+    });
+}
+
+/* The sort value for one Profit and Loss row, shared by the
+   component and the smoke tests. */
+export function plRowValue(r, key) {
+  switch (key) {
+    case 'fy': return r.fy || '';
+    case 'revenue': return r.revenue;
+    case 'rent': return r.rent;
+    case 'salaries': return r.salaries;
+    case 'hosting': return r.hosting;
+    case 'suppliers': return r.suppliers;
+    case 'utilities': return r.utilities;
+    case 'expenses': return r.expenses;
+    case 'profit': return r.profit;
+    default: return r.fy || '';
+  }
+}
+
+export default function Ledger({ api, fy, refreshKey, initialTrial, initialAccounts, initialBalances, initialBank, initialInvoices }) {
   const [trial, setTrial] = useState(initialTrial || null);
   const [accounts, setAccounts] = useState(initialAccounts || null);
   const [balances, setBalances] = useState(initialBalances || null);
   const [bank, setBank] = useState(initialBank || null);
-  const [loading, setLoading] = useState(!initialTrial || !initialAccounts || !initialBalances || !initialBank);
+  const [invoices, setInvoices] = useState(initialInvoices || null);
+  const [loading, setLoading] = useState(!initialTrial || !initialAccounts || !initialBalances || !initialBank || !initialInvoices);
   const [loadError, setLoadError] = useState('');
 
   useEffect(() => {
-    if (initialTrial && initialAccounts && initialBalances && initialBank) return;
+    if (initialTrial && initialAccounts && initialBalances && initialBank && initialInvoices) return;
     let cancelled = false;
     (async () => {
       setLoading(true);
       setLoadError('');
       try {
         const fyParam = 'fiscal_year=' + encodeURIComponent(fy || 'all');
-        const [t, a, b, k] = await Promise.all([
+        /* All invoices, paginated — the Profit and Loss table is
+           calculated from these, the same while-loop pattern as
+           the Vendor bills tab. */
+        const fetchAllInvoices = async () => {
+          let rows = [];
+          let page = 1;
+          let total = Infinity;
+          while (rows.length < total) {
+            const resp = await api('/invoices?per_page=200&page=' + page);
+            const d = (resp && resp.data) || [];
+            total = (resp && resp.meta && resp.meta.pagination && resp.meta.pagination.total) || d.length;
+            rows = rows.concat(d);
+            page += 1;
+            if (!d.length) break;
+          }
+          return rows;
+        };
+        const [t, a, b, k, inv] = await Promise.all([
           api('/ledger/trial-balance?' + fyParam),
           api('/ledger/accounts?per_page=200'),
           api('/ledger/balances?' + fyParam),
           api('/bank'),
+          fetchAllInvoices(),
         ]);
         if (cancelled) return;
         setTrial((t && t.data) || null);
         setAccounts((a && a.data) || []);
         setBalances((b && b.data) || {});
         setBank(k || null);
+        setInvoices(inv);
       } catch (err) {
         if (!cancelled) setLoadError(friendlyError(err));
       } finally {
@@ -89,6 +192,23 @@ export default function Ledger({ api, fy, refreshKey, initialTrial, initialAccou
       default: return e.date_ad || e.date_bs || e.date || '';
     }
   });
+  /* Profit and Loss: one sort state of its own. A single year
+     picked shows that year only, like the trial balance above;
+     'all' shows every year plus an all-years Total row. */
+  const plSort = useTableSort(null);
+  const plRows = profitAndLoss(invoices || []);
+  const plShown = effectiveFy === 'all' ? plRows : plRows.filter((r) => r.fy === effectiveFy);
+  const sortedPl = plSort.apply(plShown, plRowValue);
+  const plTotal = plRows.reduce((t, r) => ({
+    revenue: round2(t.revenue + r.revenue),
+    rent: round2(t.rent + r.rent),
+    salaries: round2(t.salaries + r.salaries),
+    hosting: round2(t.hosting + r.hosting),
+    suppliers: round2(t.suppliers + r.suppliers),
+    utilities: round2(t.utilities + r.utilities),
+    expenses: round2(t.expenses + r.expenses),
+    profit: round2(t.profit + r.profit),
+  }), { revenue: 0, rent: 0, salaries: 0, hosting: 0, suppliers: 0, utilities: 0, expenses: 0, profit: 0 });
 
   return (
     <>
@@ -226,6 +346,67 @@ export default function Ledger({ api, fy, refreshKey, initialTrial, initialAccou
           ) : (
             <p className="text-muted">No bank entries in this fiscal year.</p>
           )}
+        </>
+      )}
+      {invoices && (
+        <>
+          <h4 className="h6 mt-3">Profit and Loss</h4>
+          {plShown.length ? (
+            <div className="table-responsive">
+              <table className="table table-striped table-sm bg-white">
+                <thead>
+                  <tr>
+                    <SortHeader label="Fiscal year" sortKey="fy" activeKey={plSort.sortKey} dir={plSort.sortDir} onSort={plSort.onSort} />
+                    <SortHeader label="Revenue" sortKey="revenue" activeKey={plSort.sortKey} dir={plSort.sortDir} onSort={plSort.onSort} className="text-right" />
+                    <SortHeader label="Rent" sortKey="rent" activeKey={plSort.sortKey} dir={plSort.sortDir} onSort={plSort.onSort} className="text-right" />
+                    <SortHeader label="Salaries" sortKey="salaries" activeKey={plSort.sortKey} dir={plSort.sortDir} onSort={plSort.onSort} className="text-right" />
+                    <SortHeader label="Hosting & domains" sortKey="hosting" activeKey={plSort.sortKey} dir={plSort.sortDir} onSort={plSort.onSort} className="text-right" />
+                    <SortHeader label="Suppliers" sortKey="suppliers" activeKey={plSort.sortKey} dir={plSort.sortDir} onSort={plSort.onSort} className="text-right" />
+                    <SortHeader label="Utilities" sortKey="utilities" activeKey={plSort.sortKey} dir={plSort.sortDir} onSort={plSort.onSort} className="text-right" />
+                    <SortHeader label="Total expenses" sortKey="expenses" activeKey={plSort.sortKey} dir={plSort.sortDir} onSort={plSort.onSort} className="text-right" />
+                    <SortHeader label="Net profit" sortKey="profit" activeKey={plSort.sortKey} dir={plSort.sortDir} onSort={plSort.onSort} className="text-right" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedPl.map((r) => (
+                    <tr key={r.fy}>
+                      <td>{r.label}</td>
+                      <td className="text-right">{money(r.revenue)}</td>
+                      <td className="text-right">{money(r.rent)}</td>
+                      <td className="text-right">{money(r.salaries)}</td>
+                      <td className="text-right">{money(r.hosting)}</td>
+                      <td className="text-right">{money(r.suppliers)}</td>
+                      <td className="text-right">{money(r.utilities)}</td>
+                      <td className="text-right">{money(r.expenses)}</td>
+                      <td className="text-right">{money(r.profit)}</td>
+                    </tr>
+                  ))}
+                  {effectiveFy === 'all' && (
+                    <tr>
+                      <td><strong>Total</strong></td>
+                      <td className="text-right"><strong>{money(plTotal.revenue)}</strong></td>
+                      <td className="text-right"><strong>{money(plTotal.rent)}</strong></td>
+                      <td className="text-right"><strong>{money(plTotal.salaries)}</strong></td>
+                      <td className="text-right"><strong>{money(plTotal.hosting)}</strong></td>
+                      <td className="text-right"><strong>{money(plTotal.suppliers)}</strong></td>
+                      <td className="text-right"><strong>{money(plTotal.utilities)}</strong></td>
+                      <td className="text-right"><strong>{money(plTotal.expenses)}</strong></td>
+                      <td className="text-right"><strong>{money(plTotal.profit)}</strong></td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="text-muted">No invoices on record for {effectiveFy}.</p>
+          )}
+          <p className="text-muted small">
+            Calculated from the invoice records, not from journal entries. Expenses are gross as recorded — supplier
+            bills include input VAT (e.g. Bagmati 107,500 includes 12,367.27 VAT). FY 2080/81 has no salary or rent
+            rows on record, so its profit is overstated; the same gap, smaller, in FY 2076/77 and FY 2081/82–2082/83,
+            which have no salary rows. This is accrual-based (invoiced revenue vs incurred expenses), unlike the By
+            fiscal year Profit column, which is cash-based (received − paid out).
+          </p>
         </>
       )}
     </>

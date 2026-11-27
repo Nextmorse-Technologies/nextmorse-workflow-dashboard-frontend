@@ -54,7 +54,14 @@ export default function Overview({ data, api, fy, refreshKey }) {
   const br = f.bank_register || {};
   const vat = f.vat || {};
   const tds = f.tds || {};
-  const sortedYears = sort.apply(f.by_fiscal_year || [], fyRowValue);
+  /* The By fiscal year table follows the Fiscal year picker like
+     every other table: a single year shows that year only, 'all'
+     shows every year. (Bijaya, 27 Nov 2026: "fy filter must
+     apply".) The API returns all years in by_fiscal_year — the
+     fiscal_year param only scopes the headline figures — so the
+     filter is applied here, client-side. */
+  const yearsShown = fy === 'all' ? (f.by_fiscal_year || []) : (f.by_fiscal_year || []).filter((r) => r.fy === fy);
+  const sortedYears = sort.apply(yearsShown, fyRowValue);
   return (
     <>
       <h3 className="h5">Headline figures</h3>
@@ -87,7 +94,7 @@ export default function Overview({ data, api, fy, refreshKey }) {
             </tr>
           </thead>
           <tbody>
-            {sortedYears.map((r) => (
+            {sortedYears.length ? sortedYears.map((r) => (
               <tr key={r.label}>
                 <td>{r.label}</td>
                 <td className="text-right">{money(r.invoiced)}</td>
@@ -98,7 +105,9 @@ export default function Overview({ data, api, fy, refreshKey }) {
                 <td className="text-right">{money(r.paid)}</td>
                 <td className="text-right">{money(r.profit)}</td>
               </tr>
-            ))}
+            )) : (
+              <tr><td colSpan={8} className="text-muted">No figures on record for {fy}.</td></tr>
+            )}
           </tbody>
         </table>
       </div>
