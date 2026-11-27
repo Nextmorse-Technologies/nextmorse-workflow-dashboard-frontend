@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { friendlyError, money } from '../api.js';
+import { dateLabel } from '../dates.js';
 import { SortHeader, useTableSort } from '../sort.js';
 import { bankForFy } from './Bank.jsx';
 
@@ -27,6 +28,47 @@ function round2(n) {
   return Math.round(n * 100) / 100;
 }
 
+/* The six Profit and Loss buckets, in table order, with the rule
+   each one follows — shown in the expandable detail so Bijaya can
+   see what is included in each number. */
+export const PL_BUCKETS = [
+  { key: 'revenue', title: 'Revenue', hint: 'Sent invoices only, net of VAT (subtotal where set, else amount − VAT)' },
+  { key: 'rent', title: 'Rent', hint: 'paid_rent rows, gross amount as recorded' },
+  { key: 'salaries', title: 'Salaries', hint: 'paid_salary rows, gross amount as recorded' },
+  { key: 'hosting', title: 'Hosting & domains', hint: 'paid_babal rows, gross amount as recorded' },
+  { key: 'suppliers', title: 'Suppliers', hint: 'paid_supplier rows, gross amount as recorded' },
+  { key: 'utilities', title: 'Utilities', hint: 'paid_utility rows, gross amount as recorded' },
+];
+
+/* Why a row is counted in NEITHER revenue nor expenses. */
+export function excludedReason(kind) {
+  switch (kind) {
+    case 'mou_receivable': return 'MOU — not an invoice, not counted as revenue';
+    case 'paid_receipt': return 'Payment receipt — not counted as an expense';
+    case 'received': return 'Vendor bill received — not counted as revenue or expense';
+    default: return 'Not counted in profit and loss';
+  }
+}
+
+function emptyPlGroup(fy) {
+  const g = { fy, label: fy ? 'FY ' + fy : 'No fiscal year' };
+  for (const b of PL_BUCKETS) g[b.key] = { total: 0, items: [] };
+  g.excluded = { total: 0, items: [] };
+  g.expenses = 0;
+  g.profit = 0;
+  return g;
+}
+
+function finalizePlGroup(g) {
+  for (const b of PL_BUCKETS) {
+    g[b.key].total = round2(g[b.key].items.reduce((t, it) => t + it.amount, 0));
+  }
+  g.excluded.total = round2(g.excluded.items.reduce((t, it) => t + it.amount, 0));
+  g.expenses = round2(g.rent.total + g.salaries.total + g.hosting.total + g.suppliers.total + g.utilities.total);
+  g.profit = round2(g.revenue.total - g.expenses);
+  return g;
+}
+
 /* Profit and loss by fiscal year, calculated from the invoice
    records — no journal entries, no sent-invoice ledger backfill
    (Bijaya, 27 Nov 2026). Bucketed by the invoice's STORED
@@ -36,45 +78,79 @@ function round2(n) {
    where set, else amount_npr − vat_npr (net of VAT). Expenses
    are the gross amount_npr as recorded, by kind: paid_rent →
    rent, paid_salary → salaries, paid_babal → hosting & domains,
-   paid_supplier → suppliers, paid_utility → utilities. One row
+   paid_supplier → suppliers, paid_utility → utilities. One group
    per fiscal year present in the invoices; a year with no sent
-   invoices still shows (revenue 0) when it has expense rows. */
-export function profitAndLoss(invoices) {
+   invoices still shows (revenue 0) when it has expense rows.
+   Rows that belong to a year but fit neither revenue nor any
+   expense bucket land in `excluded` with the reason, so every
+   row is accounted for. Rows with no fiscal_year at all go in a
+   'No fiscal year' group (fy null), only when any exist — the
+   P&L summary skips them, but the detail shows them. */
+export function profitAndLossDetail(invoices) {
   const byFy = {};
+  const noFy = emptyPlGroup(null);
+  let hasNoFy = false;
   for (const inv of invoices || []) {
     const fy = inv.fiscal_year;
-    if (!fy) continue;
-    const row = byFy[fy] || (byFy[fy] = {
-      fy, label: 'FY ' + fy,
-      revenue: 0, rent: 0, salaries: 0, hosting: 0,
-      suppliers: 0, utilities: 0,
-    });
+    const group = fy ? (byFy[fy] || (byFy[fy] = emptyPlGroup(fy))) : noFy;
+    if (!fy) hasNoFy = true;
+    const item = {
+      id: inv.id,
+      name: inv.client_name || '—',
+      service: inv.service || '—',
+      date_ad: inv.date_ad,
+      date_bs: inv.date_bs,
+      amount: 0,
+    };
+    if (!fy) {
+      item.amount = Number(inv.amount_npr) || 0;
+      item.reason = 'No fiscal year on the record — not counted in any year';
+      group.excluded.items.push(item);
+      continue;
+    }
     if (inv.kind === 'sent') {
-      row.revenue += inv.subtotal_npr != null
+      item.amount = inv.subtotal_npr != null
         ? Number(inv.subtotal_npr)
         : (Number(inv.amount_npr) || 0) - (Number(inv.vat_npr) || 0);
+      group.revenue.items.push(item);
     } else {
       const field = EXPENSE_KIND[inv.kind];
-      if (field) row[field] += Number(inv.amount_npr) || 0;
+      if (field) {
+        item.amount = Number(inv.amount_npr) || 0;
+        group[field].items.push(item);
+      } else {
+        item.amount = Number(inv.amount_npr) || 0;
+        item.reason = excludedReason(inv.kind);
+        group.excluded.items.push(item);
+      }
     }
   }
-  return Object.values(byFy)
+  const groups = Object.values(byFy)
     .sort((a, b) => (a.fy < b.fy ? -1 : a.fy > b.fy ? 1 : 0))
-    .map((r) => {
-      const expenses = round2(r.rent + r.salaries + r.hosting + r.suppliers + r.utilities);
-      return {
-        fy: r.fy,
-        label: r.label,
-        revenue: round2(r.revenue),
-        rent: round2(r.rent),
-        salaries: round2(r.salaries),
-        hosting: round2(r.hosting),
-        suppliers: round2(r.suppliers),
-        utilities: round2(r.utilities),
-        expenses,
-        profit: round2(r.revenue - expenses),
-      };
-    });
+    .map(finalizePlGroup);
+  if (hasNoFy) groups.push(finalizePlGroup(noFy));
+  return groups;
+}
+
+/* The summary rows the table shows. Derived from
+   profitAndLossDetail so the figures always agree with the
+   expandable detail, by construction — the detail is the
+   calculation, this is only its sums. */
+export function profitAndLoss(invoices) {
+  return profitAndLossDetail(invoices)
+    .filter((g) => g.fy)
+    .map((g) => ({
+      fy: g.fy,
+      label: g.label,
+      revenue: g.revenue.total,
+      rent: g.rent.total,
+      salaries: g.salaries.total,
+      hosting: g.hosting.total,
+      suppliers: g.suppliers.total,
+      utilities: g.utilities.total,
+      expenses: g.expenses,
+      profit: g.profit,
+    }));
 }
 
 /* The sort value for one Profit and Loss row, shared by the
@@ -94,7 +170,111 @@ export function plRowValue(r, key) {
   }
 }
 
-export default function Ledger({ api, fy, refreshKey, initialTrial, initialAccounts, initialBalances, initialBank, initialInvoices }) {
+/* One fiscal year's full calculation, shown when its row is
+   expanded: every item behind each bucket, with the bucket
+   subtotal, plus the rows counted in neither — with the reason.
+   Computed on the fly, in memory, from the same invoice list the
+   table is built from (Bijaya, 27 Nov 2026: paid and issued
+   invoices are the single source of truth — nothing is stored).
+   Pass showProfit={false} for the 'No fiscal year' group, which
+   has no profit figure. */
+function PlDetail({ group, showProfit = true }) {
+  return (
+    <div className="pl-detail text-left">
+      {PL_BUCKETS.map((b) => {
+        const bucket = group[b.key];
+        return (
+          <div key={b.key} className="mb-3">
+            <p className="mb-1">
+              <strong>{b.title}</strong> — {money(bucket.total)} ({bucket.items.length} {bucket.items.length === 1 ? 'item' : 'items'})
+              {' '}<span className="text-muted small">{b.hint}</span>
+            </p>
+            {bucket.items.length ? (
+              <table className="table table-sm mb-1 bg-white">
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Client / Supplier</th>
+                    <th>Service</th>
+                    <th>Date</th>
+                    <th className="text-right">{b.key === 'revenue' ? 'Revenue' : 'Amount'}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {bucket.items.map((it) => (
+                    <tr key={it.id}>
+                      <td>{it.id}</td>
+                      <td>{it.name}</td>
+                      <td>{it.service}</td>
+                      <td>{dateLabel(it.date_ad, it.date_bs)}</td>
+                      <td className="text-right">{money(it.amount)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <td colSpan={4}><strong>Subtotal</strong></td>
+                    <td className="text-right"><strong>{money(bucket.total)}</strong></td>
+                  </tr>
+                </tfoot>
+              </table>
+            ) : (
+              <p className="text-muted small mb-1">No items in this year — 0.00.</p>
+            )}
+          </div>
+        );
+      })}
+      <div className="mb-1">
+        <p className="mb-1">
+          <strong>Not counted</strong> — {money(group.excluded.total)} ({group.excluded.items.length} {group.excluded.items.length === 1 ? 'item' : 'items'})
+          {' '}<span className="text-muted small">Rows in this year counted in neither revenue nor expenses.</span>
+        </p>
+        {group.excluded.items.length ? (
+          <table className="table table-sm mb-1 bg-white">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Client / Supplier</th>
+                <th>Service</th>
+                <th>Date</th>
+                <th className="text-right">Amount</th>
+                <th>Reason</th>
+              </tr>
+            </thead>
+            <tbody>
+              {group.excluded.items.map((it) => (
+                <tr key={it.id}>
+                  <td>{it.id}</td>
+                  <td>{it.name}</td>
+                  <td>{it.service}</td>
+                  <td>{dateLabel(it.date_ad, it.date_bs)}</td>
+                  <td className="text-right">{money(it.amount)}</td>
+                  <td>{it.reason}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td colSpan={4}><strong>Subtotal (not counted)</strong></td>
+                <td className="text-right"><strong>{money(group.excluded.total)}</strong></td>
+                <td></td>
+              </tr>
+            </tfoot>
+          </table>
+        ) : (
+          <p className="text-muted small mb-1">Nothing excluded — every row in this year is counted.</p>
+        )}
+      </div>
+      {showProfit && (
+        <p className="text-muted small mb-0">
+          Net profit = Revenue {money(group.revenue.total)} − Total expenses {money(group.expenses)} = {money(group.profit)}.
+        </p>
+      )}
+    </div>
+  );
+}
+
+export default function Ledger({ api, fy, refreshKey, initialTrial, initialAccounts, initialBalances, initialBank, initialInvoices, initialPlExpanded }) {
   const [trial, setTrial] = useState(initialTrial || null);
   const [accounts, setAccounts] = useState(initialAccounts || null);
   const [balances, setBalances] = useState(initialBalances || null);
@@ -209,6 +389,32 @@ export default function Ledger({ api, fy, refreshKey, initialTrial, initialAccou
     expenses: round2(t.expenses + r.expenses),
     profit: round2(t.profit + r.profit),
   }), { revenue: 0, rent: 0, salaries: 0, hosting: 0, suppliers: 0, utilities: 0, expenses: 0, profit: 0 });
+  /* The expandable detail: the item lists behind each number,
+     computed on the fly from the same fetched invoices — nothing
+     stored, nothing snapshotted. Sorting stays on the summary
+     rows only; a detail row always follows its own summary row.
+     `initialPlExpanded` exists for the smoke tests (like the
+     other initial* props); in the app every row starts closed. */
+  const [plExpanded, setPlExpanded] = useState(initialPlExpanded || {});
+  const togglePl = (key) => setPlExpanded((s) => ({ ...s, [key]: !s[key] }));
+  const plDetail = profitAndLossDetail(invoices || []);
+  const plDetailByFy = {};
+  for (const g of plDetail) if (g.fy) plDetailByFy[g.fy] = g;
+  const plNoFy = plDetail.find((g) => !g.fy) || null;
+  /* The Total row's detail: all years' items merged. Its bucket
+     totals are the Total row's figures, so the expansion agrees
+     with the row above it by construction. */
+  const plAllDetail = { fy: 'all', label: 'All years', expenses: plTotal.expenses, profit: plTotal.profit };
+  for (const b of PL_BUCKETS) {
+    plAllDetail[b.key] = { total: plTotal[b.key], items: [] };
+  }
+  plAllDetail.excluded = { total: 0, items: [] };
+  for (const g of plDetail) {
+    if (!g.fy) continue;
+    for (const b of PL_BUCKETS) plAllDetail[b.key].items.push(...g[b.key].items);
+    plAllDetail.excluded.items.push(...g.excluded.items);
+  }
+  plAllDetail.excluded.total = round2(plAllDetail.excluded.items.reduce((t, it) => t + it.amount, 0));
 
   return (
     <>
@@ -369,30 +575,70 @@ export default function Ledger({ api, fy, refreshKey, initialTrial, initialAccou
                 </thead>
                 <tbody>
                   {sortedPl.map((r) => (
-                    <tr key={r.fy}>
-                      <td>{r.label}</td>
-                      <td className="text-right">{money(r.revenue)}</td>
-                      <td className="text-right">{money(r.rent)}</td>
-                      <td className="text-right">{money(r.salaries)}</td>
-                      <td className="text-right">{money(r.hosting)}</td>
-                      <td className="text-right">{money(r.suppliers)}</td>
-                      <td className="text-right">{money(r.utilities)}</td>
-                      <td className="text-right">{money(r.expenses)}</td>
-                      <td className="text-right">{money(r.profit)}</td>
-                    </tr>
+                    <Fragment key={r.fy}>
+                      <tr>
+                        <td>
+                          <button
+                            type="button"
+                            className="btn btn-link btn-sm p-0 mr-1"
+                            onClick={() => togglePl(r.fy)}
+                            aria-expanded={!!plExpanded[r.fy]}
+                            aria-label={(plExpanded[r.fy] ? 'Hide' : 'Show') + ' calculation for ' + r.label}
+                          >
+                            {plExpanded[r.fy] ? '▾' : '▸'}
+                          </button>
+                          {' '}{r.label}
+                        </td>
+                        <td className="text-right">{money(r.revenue)}</td>
+                        <td className="text-right">{money(r.rent)}</td>
+                        <td className="text-right">{money(r.salaries)}</td>
+                        <td className="text-right">{money(r.hosting)}</td>
+                        <td className="text-right">{money(r.suppliers)}</td>
+                        <td className="text-right">{money(r.utilities)}</td>
+                        <td className="text-right">{money(r.expenses)}</td>
+                        <td className="text-right">{money(r.profit)}</td>
+                      </tr>
+                      {plExpanded[r.fy] && plDetailByFy[r.fy] && (
+                        <tr>
+                          <td colSpan={9}>
+                            <PlDetail group={plDetailByFy[r.fy]} />
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
                   ))}
                   {effectiveFy === 'all' && (
-                    <tr>
-                      <td><strong>Total</strong></td>
-                      <td className="text-right"><strong>{money(plTotal.revenue)}</strong></td>
-                      <td className="text-right"><strong>{money(plTotal.rent)}</strong></td>
-                      <td className="text-right"><strong>{money(plTotal.salaries)}</strong></td>
-                      <td className="text-right"><strong>{money(plTotal.hosting)}</strong></td>
-                      <td className="text-right"><strong>{money(plTotal.suppliers)}</strong></td>
-                      <td className="text-right"><strong>{money(plTotal.utilities)}</strong></td>
-                      <td className="text-right"><strong>{money(plTotal.expenses)}</strong></td>
-                      <td className="text-right"><strong>{money(plTotal.profit)}</strong></td>
-                    </tr>
+                    <Fragment>
+                      <tr>
+                        <td>
+                          <button
+                            type="button"
+                            className="btn btn-link btn-sm p-0 mr-1"
+                            onClick={() => togglePl('all')}
+                            aria-expanded={!!plExpanded.all}
+                            aria-label={(plExpanded.all ? 'Hide' : 'Show') + ' calculation for all years'}
+                          >
+                            {plExpanded.all ? '▾' : '▸'}
+                          </button>
+                          {' '}<strong>Total</strong>
+                        </td>
+                        <td className="text-right"><strong>{money(plTotal.revenue)}</strong></td>
+                        <td className="text-right"><strong>{money(plTotal.rent)}</strong></td>
+                        <td className="text-right"><strong>{money(plTotal.salaries)}</strong></td>
+                        <td className="text-right"><strong>{money(plTotal.hosting)}</strong></td>
+                        <td className="text-right"><strong>{money(plTotal.suppliers)}</strong></td>
+                        <td className="text-right"><strong>{money(plTotal.utilities)}</strong></td>
+                        <td className="text-right"><strong>{money(plTotal.expenses)}</strong></td>
+                        <td className="text-right"><strong>{money(plTotal.profit)}</strong></td>
+                      </tr>
+                      {plExpanded.all && (
+                        <tr>
+                          <td colSpan={9}>
+                            <PlDetail group={plAllDetail} />
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
                   )}
                 </tbody>
               </table>
@@ -400,10 +646,16 @@ export default function Ledger({ api, fy, refreshKey, initialTrial, initialAccou
           ) : (
             <p className="text-muted">No invoices on record for {effectiveFy}.</p>
           )}
+          {plNoFy && (
+            <>
+              <h4 className="h6 mt-3">Invoices with no fiscal year — not counted in any year</h4>
+              <PlDetail group={plNoFy} showProfit={false} />
+            </>
+          )}
           <p className="text-muted small">
             Calculated from the invoice records, not from journal entries. Expenses are gross as recorded — supplier
-            bills include input VAT (e.g. Bagmati 107,500 includes 12,367.27 VAT). FY 2080/81 has no salary or rent
-            rows on record, so its profit is overstated; the same gap, smaller, in FY 2076/77 and FY 2081/82–2082/83,
+            bills include input VAT (e.g. Bagmati 107,500 includes 12,367.27 VAT). FY 2080/81 has no rent rows on
+            record, so its profit is overstated by the rent; the same gap, smaller, in FY 2076/77 and FY 2081/82–2082/83,
             which have no salary rows. This is accrual-based (invoiced revenue vs incurred expenses), unlike the By
             fiscal year Profit column, which is cash-based (received − paid out).
           </p>
