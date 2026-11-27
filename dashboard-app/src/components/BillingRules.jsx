@@ -7,7 +7,17 @@ import { dateLabel } from '../dates.js';
    returns the raw rows (no client name, no BS date), so client names
    come from the Active list the app already loads, plus one fetch
    each for any rule whose client is not Active. The page has no
-   fiscal-year filter, so this tab is all-years. */
+   fiscal-year filter, so this tab is all-years. Only active rules
+   are shown: the two no-billing rules (status 'none') and the
+   inactive Multigate rule are hidden. The Billing tab's attach
+   list is unaffected — it picks by amount, not status. */
+
+/* Only the rules that bill: status 'active'. The hidden ones are
+   the two no-billing rules (Mountain Fund, Anishma — 'none') and
+   the inactive Multigate rule. */
+export function activeRules(rows) {
+  return (rows || []).filter((r) => r.status === 'active');
+}
 export default function BillingRules({ api, clients, refreshKey, onIssueInvoice, initialRules, initialClientNames, initialClientDomains }) {
   const [rules, setRules] = useState(initialRules || null);
   const [clientNames, setClientNames] = useState(initialClientNames || {});
@@ -55,18 +65,25 @@ export default function BillingRules({ api, clients, refreshKey, onIssueInvoice,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshKey]);
 
-  /* Laravel order: by client, then by rule. */
-  const sorted = (rules || []).slice().sort((a, b) => (a.client_id - b.client_id) || (a.id - b.id));
+  /* Laravel order: by client, then by rule. Non-active rules are
+     hidden from this tab (see activeRules above). */
+  const sorted = activeRules(rules).slice().sort((a, b) => (a.client_id - b.client_id) || (a.id - b.id));
+  const hiddenCount = (rules || []).length - sorted.length;
 
   return (
     <>
       <h3 className="h5">Billing Rules</h3>
       <p className="mb-2 text-muted">The recurring charges, with treatment and TDS status.</p>
+      {rules && hiddenCount > 0 && (
+        <p className="text-muted small">
+          Showing {sorted.length} active rules — {hiddenCount} hidden (no billing or inactive).
+        </p>
+      )}
       {loading && <p className="text-muted">Loading billing rules…</p>}
       {loadError && <div className="alert alert-danger" role="alert">{loadError}</div>}
       {rules && (
         sorted.length === 0 ? (
-          <p className="text-muted">No billing rules on record.</p>
+          <p className="text-muted">{rules.length === 0 ? 'No billing rules on record.' : 'No active billing rules.'}</p>
         ) : (
           <div className="table-responsive">
             <table className="table table-striped table-sm bg-white">

@@ -1,13 +1,16 @@
 import { useEffect, useState } from 'react';
 import { friendlyError, money } from '../api.js';
 import { dateLabel, fyOfBs } from '../dates.js';
-import { displayNumber, GroupTable } from './Invoices.jsx';
+import { displayNumber, GroupTable, lockedPettyCash } from './Invoices.jsx';
 
 /* The Petty cash register, like the Laravel page: the no-VAT-no-TDS
    invoices for the fiscal year, then the receipts that pay only
    those invoices. Lists only — nothing here is government-tracked.
+   The Locked petty cash card uses the same filter as the Invoices
+   tab (lockedPettyCash in Invoices.jsx), so the two cards agree.
    The live Laravel page has no locked card (its Locked card view
-   was never pushed), so this tab has none either. */
+   was never pushed) — that view is still unpushed; this React
+   card reads from the API and does not depend on it. */
 
 function receiptNumber(r) {
   return r.display_number || '—';
@@ -86,6 +89,10 @@ export default function PettyCash({ api, refreshKey, fy, initialInvoices, initia
       r.is_petty_cash &&
       (effectiveFy === 'all' || fyOfBs(r.date_bs) === parseInt(effectiveFy.slice(0, 4), 10)));
 
+  /* Locked petty cash: the Paid petty invoices in this fiscal year —
+     the same filter as the Invoices tab, so the two cards agree. */
+  const lockedPetty = lockedPettyCash(shownInvoices);
+
   return (
     <>
       <h3 className="h5">Petty cash</h3>
@@ -107,6 +114,21 @@ export default function PettyCash({ api, refreshKey, fy, initialInvoices, initia
                 <GroupTable items={shownInvoices} onPrint={onPrintInvoice} />
               ) : (
                 <p className="text-muted mb-0">No petty cash invoices in this fiscal year.</p>
+              )}
+            </div>
+          </div>
+          <div className="card mb-4">
+            <div className="card-body">
+              <h4 className="card-title h6">
+                Locked petty cash invoices — Subtotal: {money(total(lockedPetty))}
+              </h4>
+              <p className="text-muted small">
+                Paid invoices in this fiscal year — cash that remains as petty cash.
+              </p>
+              {lockedPetty.length ? (
+                <GroupTable items={lockedPetty} onPrint={onPrintInvoice} />
+              ) : (
+                <p className="text-muted mb-0">No locked petty cash invoices in this fiscal year.</p>
               )}
             </div>
           </div>

@@ -5,9 +5,11 @@ import { dateLabel } from '../dates.js';
 /* The Client Invoices register, like the Laravel page: the sent
    invoices for the fiscal year grouped into Tax / Petty cash /
    Other, then the locked tax invoices and the locked petty cash
-   invoices. Lists only — adding lives in the Billing tab.
-   Credit notes have no card here: the API has no endpoint that
-   lists them, only POST to create one. */
+   invoices, then the credit notes that reverse (part of) a locked
+   tax invoice. Lists only — adding lives in the Billing tab. The
+   credit-notes card reads from GET /api/v1/credit-notes and is
+   read-only: a credit note is created through the existing
+   credit-note flow, not from this card. */
 
 /* The invoice number as shown: a tax invoice (a VAT treatment, or
    any VAT charged) shows its number; anything else carries NT in
@@ -51,6 +53,18 @@ export function lockedPettyCash(rows) {
     inv.kind === 'sent' &&
     ['no_vat', 'no_vat_no_tds'].includes(inv.treatment) &&
     inv.status === 'Paid');
+}
+
+/* Credit notes for a fiscal year ('all' keeps every year). */
+export function creditNotesForFy(rows, fy) {
+  const list = rows || [];
+  if (!fy || fy === 'all') return list;
+  return list.filter((cn) => cn.fiscal_year === fy);
+}
+
+/* The total returned by a list of credit notes. */
+export function creditNotesTotal(rows) {
+  return (rows || []).reduce((sum, cn) => sum + (Number(cn.total_return_npr) || 0), 0);
 }
 
 /* Hover text for a locked invoice's Status badge — the same rule as
@@ -118,32 +132,45 @@ export function GroupTable({ items, onPrint }) {
   );
 }
 
-export default function Invoices({ api, refreshKey, fy, initialRows, onPrintInvoice }) {
+export default function Invoices({ api, refreshKey, fy, initialRows, initialCreditNotes, onPrintInvoice }) {
   const [rows, setRows] = useState(initialRows || null);
-  const [loading, setLoading] = useState(!initialRows);
+  const [creditNotes, setCreditNotes] = useState(initialCreditNotes || null);
+  const [loading, setLoading] = useState(!initialRows || !initialCreditNotes);
   const [loadError, setLoadError] = useState('');
 
   /* The whole invoice list, once — 324 rows over two pages at most —
-     so the fiscal-year filter works client-side with no refetch. */
+     so the fiscal-year filter works client-side with no refetch.
+     The credit notes come along the same way, from
+     GET /api/v1/credit-notes. */
   useEffect(() => {
-    if (initialRows) return;
+    if (initialRows && initialCreditNotes) return;
     let cancelled = false;
     (async () => {
       setLoading(true);
       setLoadError('');
       try {
-        let all = [];
-        let page = 1;
-        let total = Infinity;
-        while (all.length < total) {
-          const resp = await api('/invoices?per_page=200&page=' + page);
-          const d = (resp && resp.data) || [];
-          total = (resp && resp.meta && resp.meta.pagination && resp.meta.pagination.total) || d.length;
-          all = all.concat(d);
-          page += 1;
-          if (!d.length) break;
+        const fetchAll = async (path) => {
+          let all = [];
+          let page = 1;
+          let totalRows = Infinity;
+          while (all.length < totalRows) {
+            const resp = await api(path + (path.includes('?') ? '&' : '?') + 'per_page=200&page=' + page);
+            const d = (resp && resp.data) || [];
+            totalRows = (resp && resp.meta && resp.meta.pagination && resp.meta.pagination.total) || d.length;
+            all = all.concat(d);
+            page += 1;
+            if (!d.length) break;
+          }
+          return all;
+        };
+        const [inv, cn] = await Promise.all([
+          initialRows ? Promise.resolve(null) : fetchAll('/invoices'),
+          initialCreditNotes ? Promise.resolve(null) : fetchAll('/credit-notes'),
+        ]);
+        if (!cancelled) {
+          if (inv !== null) setRows(inv);
+          if (cn !== null) setCreditNotes(cn);
         }
-        if (!cancelled) setRows(all);
       } catch (err) {
         if (!cancelled) setLoadError(friendlyError(err));
       } finally {
@@ -168,6 +195,7 @@ export default function Invoices({ api, refreshKey, fy, initialRows, onPrintInvo
   const groups = groupInvoices(sent);
   const locked = lockedTax(shown);
   const lockedPetty = lockedPettyCash(shown);
+  const shownCreditNotes = creditNotesForFy(creditNotes, effectiveFy);
 
   return (
     <>
@@ -179,7 +207,7 @@ export default function Invoices({ api, refreshKey, fy, initialRows, onPrintInvo
       </p>
       {loading && <p className="text-muted">Loading invoices…</p>}
       {loadError && <div className="alert alert-danger" role="alert">{loadError}</div>}
-      {rows && (
+      {rows && creditNotes && (
         <>
           <div className="card mb-4">
             <div className="card-body">
@@ -258,6 +286,46 @@ export default function Invoices({ api, refreshKey, fy, initialRows, onPrintInvo
                 <GroupTable items={lockedPetty} onPrint={onPrintInvoice} />
               ) : (
                 <p className="text-muted mb-0">No locked petty cash invoices in this fiscal year.</p>
+              )}
+            </div>
+          </div>
+          <div className="card mb-4">
+            <div className="card-body">
+              <h4 className="card-title h6">
+                Credit notes — Subtotal: {money(creditNotesTotal(shownCreditNotes))}
+              </h4>
+              <p className="text-muted small">
+                Amounts returned to clients on locked tax invoices. This card is read-only.
+              </p>
+              {shownCreditNotes.length ? (
+                <div className="table-responsive">
+                  <table className="table table-striped table-sm bg-white">
+                    <thead>
+                      <tr>
+                        <th>Credit note no.</th>
+                        <th>Invoice</th>
+                        <th>Client</th>
+                        <th>Reason</th>
+                        <th className="text-right">Amount</th>
+                        <th>Issued</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {shownCreditNotes.map((cn) => (
+                        <tr key={cn.id}>
+                          <td>{cn.credit_note_number || '—'}</td>
+                          <td>{cn.invoice_number || '—'}</td>
+                          <td>{cn.client_name || '—'}</td>
+                          <td>{cn.reason || '—'}</td>
+                          <td className="text-right">{money(cn.total_return_npr)}</td>
+                          <td>{dateLabel(cn.issued_date_ad, cn.issued_date_bs)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="text-muted mb-0">No credit notes in this fiscal year.</p>
               )}
             </div>
           </div>
