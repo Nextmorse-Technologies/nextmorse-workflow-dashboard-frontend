@@ -1,6 +1,12 @@
 import { useEffect, useState } from 'react';
 import { friendlyError, money } from '../api.js';
 import { dateLabel, fyOfAd, fyOfBs, fyString } from '../dates.js';
+import { SortHeader, sortInvoices, useTableSort } from '../sort.js';
+
+/* Sorting lives in the shared sort module (src/sort.js) so every
+   tab sorts the same way; these names are re-exported here for
+   any importer that already reads them from this file. */
+export { compareInvoiceNumber, sortInvoices } from '../sort.js';
 
 /* The Tax invoices register: the sent tax invoices for the fiscal
    year, then the locked tax invoices, then the credit notes that
@@ -61,6 +67,71 @@ export function isSent(inv) {
   return inv.kind === 'sent' || inv.kind === 'mou_receivable';
 }
 
+/* Split a stored receipt number on its last '-': '2083/84-001'
+   becomes { fy: '2083/84', serial: '001' } — the fiscal year is
+   stored with the serial (Bijaya, 27 Nov 2026) because
+   receipts.receipt_number is UNIQUE and a plain '001' would
+   repeat across years. A plain number ('72') has no fiscal-year
+   prefix — { fy: null, serial: '72' }. Null when the receipt
+   carries no stored number. */
+export function parseReceiptNumber(number) {
+  if (number == null || number === '') return null;
+  const s = String(number);
+  const i = s.lastIndexOf('-');
+  if (i > 0) {
+    const prefix = s.slice(0, i);
+    const serial = s.slice(i + 1);
+    if (/^\d{4}\/\d{2}$/.test(prefix) && serial !== '') return { fy: prefix, serial };
+  }
+  return { fy: null, serial: s };
+}
+
+/* The fiscal-year label for a receipt — from its stored number
+   first (the fiscal year is stored with the serial), then the
+   API's fiscal_year, then its BS date, AD date as a fallback. */
+export function receiptFy(receipt) {
+  const parsed = parseReceiptNumber(receipt.receipt_number);
+  if (parsed && parsed.fy) return parsed.fy;
+  if (receipt.fiscal_year) return receipt.fiscal_year;
+  const fromBs = receipt.date_bs ? fyOfBs(receipt.date_bs) : null;
+  if (fromBs) return fyString(fromBs);
+  const fromAd = receipt.date_ad ? fyOfAd(receipt.date_ad) : null;
+  if (fromAd) return fyString(fromAd);
+  return null;
+}
+
+/* The receipt number as shown. A tax receipt shows the serial
+   part only ('001'). A petty-cash receipt shows the fiscal year
+   and NT in front — {fiscal_year}-NT-{serial} — like a petty
+   invoice, so it reads as non-taxed wherever the number is
+   shown. A plain number with no fiscal-year prefix (an existing
+   paper number, e.g. '72') is shown as-is. Only what is stored
+   in receipt_number is shown; a receipt with no stored number
+   shows '—'. A receipt is petty when the server flags it
+   is_petty_cash — every linked invoice is kind sent with
+   treatment no_vat/no_vat_no_tds and no tax-invoice marker. The
+   NT prefix is added by the display, never stored. */
+export function displayReceiptNumber(receipt) {
+  const parsed = parseReceiptNumber(receipt.receipt_number);
+  if (!parsed) return '—';
+  if (!parsed.fy) return parsed.serial;
+  if (receipt.is_petty_cash) return parsed.fy + '-NT-' + parsed.serial;
+  return parsed.serial;
+}
+
+/* The sortable value of a receipt number: fiscal year then
+   serial, so numbers repeat correctly across years. Null when
+   the receipt carries no stored number. */
+export function receiptNumberValue(receipt) {
+  const parsed = parseReceiptNumber(receipt.receipt_number);
+  if (!parsed) return null;
+  const n = Number(parsed.serial);
+  if (!Number.isFinite(n)) return parsed.serial;
+  const fy = parsed.fy || receiptFy(receipt);
+  const fyStart = fy ? parseInt(String(fy).split('/')[0], 10) : 0;
+  return (Number.isFinite(fyStart) ? fyStart : 0) * 1000000 + n;
+}
+
 export function groupTotal(items) {
   return items.reduce((sum, inv) => sum + (Number(inv.amount_npr) || 0), 0);
 }
@@ -113,18 +184,23 @@ export function statusBadge(status) {
   return 'badge-secondary';
 }
 
-export function GroupTable({ items, onPrint }) {
+/* The invoice list table, shared with the Petty cash tab. The
+   caller sorts the items and passes the sort state, so every
+   heading is a sort button; without sort props the headings stay
+   plain, as before. The Print column has no sort — it is an
+   action, not data. */
+export function GroupTable({ items, onPrint, sortKey, sortDir, onSort }) {
   return (
     <div className="table-responsive">
       <table className="table table-striped table-sm bg-white">
         <thead>
           <tr>
-            <th>Invoice no.</th>
-            <th>Client</th>
-            <th>Package / Service / Product</th>
-            <th className="text-right">Amount</th>
-            <th>Status</th>
-            <th>Issued</th>
+            <SortHeader label="Invoice no." sortKey="number" activeKey={sortKey} dir={sortDir} onSort={onSort} />
+            <SortHeader label="Client" sortKey="client" activeKey={sortKey} dir={sortDir} onSort={onSort} />
+            <SortHeader label="Package / Service / Product" sortKey="service" activeKey={sortKey} dir={sortDir} onSort={onSort} />
+            <SortHeader label="Amount" sortKey="amount" activeKey={sortKey} dir={sortDir} onSort={onSort} className="text-right" />
+            <SortHeader label="Status" sortKey="status" activeKey={sortKey} dir={sortDir} onSort={onSort} />
+            <SortHeader label="Issued" sortKey="issued" activeKey={sortKey} dir={sortDir} onSort={onSort} />
             <th></th>
           </tr>
         </thead>
@@ -157,6 +233,14 @@ export default function Invoices({ api, refreshKey, fy, initialRows, initialCred
   const [creditNotes, setCreditNotes] = useState(initialCreditNotes || null);
   const [loading, setLoading] = useState(!initialRows || !initialCreditNotes);
   const [loadError, setLoadError] = useState('');
+  /* One sort state per table. The tax invoices start sorted by
+     invoice number, ascending (Bijaya, 27 Nov 2026); the locked
+     table the same; the credit notes start in their original
+     order. Each table sorts only the rows actually shown, after
+     the fiscal-year filter. */
+  const taxSort = useTableSort('number', 'asc');
+  const lockedSort = useTableSort('number', 'asc');
+  const cnSort = useTableSort(null);
 
   /* The whole invoice list, once — 324 rows over two pages at most —
      so the fiscal-year filter works client-side with no refetch.
@@ -212,9 +296,18 @@ export default function Invoices({ api, refreshKey, fy, initialRows, initialCred
       : rows.filter((r) => r.fiscal_year === effectiveFy);
 
   const sent = shown.filter(isSent);
-  const taxInvoices = sent.filter(isTaxInvoice);
-  const locked = lockedTax(sent);
-  const shownCreditNotes = creditNotesForFy(creditNotes, effectiveFy);
+  const taxInvoices = sortInvoices(sent.filter(isTaxInvoice), taxSort.sortKey, taxSort.sortDir);
+  const locked = sortInvoices(lockedTax(sent), lockedSort.sortKey, lockedSort.sortDir);
+  const shownCreditNotes = cnSort.apply(creditNotesForFy(creditNotes, effectiveFy), (cn, key) => {
+    switch (key) {
+      case 'invoice': return cn.invoice_number || '';
+      case 'client': return cn.client_name || '';
+      case 'reason': return cn.reason || '';
+      case 'amount': return cn.total_return_npr;
+      case 'issued': return cn.issued_date_ad || '';
+      default: return cn.credit_note_number || '';
+    }
+  });
 
   return (
     <>
@@ -231,13 +324,13 @@ export default function Invoices({ api, refreshKey, fy, initialRows, initialCred
           <div className="card mb-4">
             <div className="card-body">
               <h4 className="card-title h6">
-                Tax invoices — Subtotal: {money(groupTotal(taxInvoices))}
+                Tax invoices ({taxInvoices.length}) — Subtotal: {money(groupTotal(taxInvoices))}
               </h4>
               <p className="text-muted small">
                 Tax invoices only — the paper tax-invoice book. A row without the tax-invoice marker is not a tax invoice, even when VAT is recorded on it. Petty cash lives on its own tab.
               </p>
               {taxInvoices.length ? (
-                <GroupTable items={taxInvoices} onPrint={onPrintInvoice} />
+                <GroupTable items={taxInvoices} onPrint={onPrintInvoice} sortKey={taxSort.sortKey} sortDir={taxSort.sortDir} onSort={taxSort.onSort} />
               ) : (
                 <p className="text-muted mb-0">No tax invoices in this fiscal year.</p>
               )}
@@ -246,18 +339,18 @@ export default function Invoices({ api, refreshKey, fy, initialRows, initialCred
           <div className="card mb-4">
             <div className="card-body">
               <h4 className="card-title h6">
-                Locked tax invoices — Subtotal: {money(groupTotal(locked))}
+                Locked tax invoices ({locked.length}) — Subtotal: {money(groupTotal(locked))}
               </h4>
               {locked.length ? (
                 <div className="table-responsive">
                   <table className="table table-striped table-sm bg-white">
                     <thead>
                       <tr>
-                        <th>Invoice</th>
-                        <th>Client</th>
-                        <th className="text-right">Amount</th>
-                        <th>Issued</th>
-                        <th>Status</th>
+                        <SortHeader label="Invoice" sortKey="number" activeKey={lockedSort.sortKey} dir={lockedSort.sortDir} onSort={lockedSort.onSort} />
+                        <SortHeader label="Client" sortKey="client" activeKey={lockedSort.sortKey} dir={lockedSort.sortDir} onSort={lockedSort.onSort} />
+                        <SortHeader label="Amount" sortKey="amount" activeKey={lockedSort.sortKey} dir={lockedSort.sortDir} onSort={lockedSort.onSort} className="text-right" />
+                        <SortHeader label="Issued" sortKey="issued" activeKey={lockedSort.sortKey} dir={lockedSort.sortDir} onSort={lockedSort.onSort} />
+                        <SortHeader label="Status" sortKey="status" activeKey={lockedSort.sortKey} dir={lockedSort.sortDir} onSort={lockedSort.onSort} />
                         <th></th>
                       </tr>
                     </thead>
@@ -301,12 +394,12 @@ export default function Invoices({ api, refreshKey, fy, initialRows, initialCred
                   <table className="table table-striped table-sm bg-white">
                     <thead>
                       <tr>
-                        <th>Credit note no.</th>
-                        <th>Invoice</th>
-                        <th>Client</th>
-                        <th>Reason</th>
-                        <th className="text-right">Amount</th>
-                        <th>Issued</th>
+                        <SortHeader label="Credit note no." sortKey="number" activeKey={cnSort.sortKey} dir={cnSort.sortDir} onSort={cnSort.onSort} />
+                        <SortHeader label="Invoice" sortKey="invoice" activeKey={cnSort.sortKey} dir={cnSort.sortDir} onSort={cnSort.onSort} />
+                        <SortHeader label="Client" sortKey="client" activeKey={cnSort.sortKey} dir={cnSort.sortDir} onSort={cnSort.onSort} />
+                        <SortHeader label="Reason" sortKey="reason" activeKey={cnSort.sortKey} dir={cnSort.sortDir} onSort={cnSort.onSort} />
+                        <SortHeader label="Amount" sortKey="amount" activeKey={cnSort.sortKey} dir={cnSort.sortDir} onSort={cnSort.onSort} className="text-right" />
+                        <SortHeader label="Issued" sortKey="issued" activeKey={cnSort.sortKey} dir={cnSort.sortDir} onSort={cnSort.onSort} />
                       </tr>
                     </thead>
                     <tbody>

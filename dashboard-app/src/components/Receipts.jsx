@@ -1,5 +1,7 @@
 import { money } from '../api.js';
 import { dateLabel, fyOfBs } from '../dates.js';
+import { SortHeader, useTableSort } from '../sort.js';
+import { displayReceiptNumber, receiptNumberValue } from './Invoices.jsx';
 
 /* Fiscal year a receipt belongs to, from its BS date. */
 function fyOfReceipt(r) {
@@ -25,7 +27,72 @@ function groupOf(r) {
 }
 
 function receiptNumber(r) {
-  return r.display_number || '—';
+  return displayReceiptNumber(r);
+}
+
+/* One of the four groups, with its own sort state — each table
+   sorts only the receipts actually shown, after the fiscal-year
+   filter. The Print column has no sort; it is an action. */
+function ReceiptGroup({ group, items, onPrintReceipt }) {
+  const sort = useTableSort(null);
+  const total = items.reduce((sum, r) => sum + (Number(r.amount_npr) || 0), 0);
+  const sorted = sort.apply(items, (r, key) => {
+    switch (key) {
+      case 'party': return r.covers || '';
+      case 'amount': return r.amount_npr;
+      case 'date': return r.date_ad || '';
+      default: return receiptNumberValue(r);
+    }
+  });
+  return (
+    <div className="card mb-4">
+      <div className="card-body">
+        <h4 className="card-title h6">
+          {group.heading} — Subtotal: {money(total)}
+        </h4>
+        {items.length ? (
+          <div className="table-responsive">
+            <table className="table table-striped table-sm bg-white">
+              <thead>
+                <tr>
+                  <SortHeader label="Receipt no." sortKey="number" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
+                  <SortHeader label={group.party} sortKey="party" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
+                  <SortHeader label={group.amount} sortKey="amount" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} className="text-right" />
+                  <SortHeader label="Payment date" sortKey="date" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {sorted.map((r) => (
+                  <tr key={r.id}>
+                    <td>{receiptNumber(r)}</td>
+                    <td>{r.covers || '—'}</td>
+                    <td className="text-right">{money(r.amount_npr)}</td>
+                    <td>{dateLabel(r.date_ad, r.date_bs)}</td>
+                    <td>
+                      {onPrintReceipt ? (
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-secondary"
+                          onClick={() => onPrintReceipt(r.id)}
+                        >
+                          {'Receipt ' + receiptNumber(r)}
+                        </button>
+                      ) : (
+                        <span className="text-muted">{'Receipt ' + receiptNumber(r)}</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="text-muted mb-0">No receipts in this fiscal year.</p>
+        )}
+      </div>
+    </div>
+  );
 }
 
 export default function Receipts({ data, fy, onPrintReceipt }) {
@@ -50,59 +117,9 @@ export default function Receipts({ data, fy, onPrintReceipt }) {
           ? 'Showing all years.'
           : 'Showing ' + effectiveFy + ' — money and government figures follow this fiscal year.'}
       </p>
-      {GROUPS.map((g) => {
-        const items = grouped[g.key];
-        const total = items.reduce((sum, r) => sum + (Number(r.amount_npr) || 0), 0);
-        return (
-          <div className="card mb-4" key={g.key}>
-            <div className="card-body">
-              <h4 className="card-title h6">
-                {g.heading} — Subtotal: {money(total)}
-              </h4>
-              {items.length ? (
-                <div className="table-responsive">
-                  <table className="table table-striped table-sm bg-white">
-                    <thead>
-                      <tr>
-                        <th>Receipt no. (paper s. no., if known)</th>
-                        <th>{g.party}</th>
-                        <th className="text-right">{g.amount}</th>
-                        <th>Payment date</th>
-                        <th></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {items.map((r) => (
-                        <tr key={r.id}>
-                          <td>{receiptNumber(r)}</td>
-                          <td>{r.covers || '—'}</td>
-                          <td className="text-right">{money(r.amount_npr)}</td>
-                          <td>{dateLabel(r.date_ad, r.date_bs)}</td>
-                          <td>
-                            {onPrintReceipt ? (
-                              <button
-                                type="button"
-                                className="btn btn-sm btn-secondary"
-                                onClick={() => onPrintReceipt(r.id)}
-                              >
-                                {'Receipt ' + receiptNumber(r)}
-                              </button>
-                            ) : (
-                              <span className="text-muted">{'Receipt ' + receiptNumber(r)}</span>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <p className="text-muted mb-0">No receipts in this fiscal year.</p>
-              )}
-            </div>
-          </div>
-        );
-      })}
+      {GROUPS.map((g) => (
+        <ReceiptGroup key={g.key} group={g} items={grouped[g.key]} onPrintReceipt={onPrintReceipt} />
+      ))}
     </>
   );
 }

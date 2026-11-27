@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { friendlyError, money } from '../api.js';
+import { SortHeader, useTableSort } from '../sort.js';
 import { bankForFy } from './Bank.jsx';
 
 /* The Laravel /ledger page, from the API: trial balance (the new
@@ -54,6 +55,40 @@ export default function Ledger({ api, fy, refreshKey, initialTrial, initialAccou
      the balance shown with them is the register balance at the
      end of the picked year. */
   const bankShown = bank ? bankForFy(entries, effectiveFy) : null;
+  /* One sort state per table; each starts in its original order.
+     Each table sorts only the rows actually shown, after the
+     fiscal-year filter. The trial balance Total row and the
+     bank ledger-vs-register table have no sortable headings and
+     are untouched. */
+  const trialSort = useTableSort(null);
+  const chartSort = useTableSort(null);
+  const bankSort = useTableSort(null);
+  const sortedTrial = trialSort.apply((trial && trial.rows) || [], (r, key) => {
+    switch (key) {
+      case 'account': return r.name || '';
+      case 'debit': return r.debit;
+      case 'credit': return r.credit;
+      case 'net': return r.net;
+      default: return r.code || '';
+    }
+  });
+  const sortedAccounts = chartSort.apply(accounts || [], (a, key) => {
+    switch (key) {
+      case 'account': return a.name || '';
+      case 'type': return a.type || '';
+      case 'balance': return (balances && balances[a.code]) ?? 0;
+      default: return a.code || '';
+    }
+  });
+  const sortedBankEntries = bankSort.apply(bankShown ? bankShown.entries : [], (e, key) => {
+    switch (key) {
+      case 'direction': return e.direction || '';
+      case 'amount': return e.amount_npr;
+      case 'reference': return e.reference || '';
+      case 'client': return e.client === 'unknown' ? '' : (e.client || '');
+      default: return e.date_ad || e.date_bs || e.date || '';
+    }
+  });
 
   return (
     <>
@@ -78,15 +113,15 @@ export default function Ledger({ api, fy, refreshKey, initialTrial, initialAccou
             <table className="table table-striped table-sm bg-white">
               <thead>
                 <tr>
-                  <th>Code</th>
-                  <th>Account</th>
-                  <th className="text-right">Debit</th>
-                  <th className="text-right">Credit</th>
-                  <th className="text-right">Net</th>
+                  <SortHeader label="Code" sortKey="code" activeKey={trialSort.sortKey} dir={trialSort.sortDir} onSort={trialSort.onSort} />
+                  <SortHeader label="Account" sortKey="account" activeKey={trialSort.sortKey} dir={trialSort.sortDir} onSort={trialSort.onSort} />
+                  <SortHeader label="Debit" sortKey="debit" activeKey={trialSort.sortKey} dir={trialSort.sortDir} onSort={trialSort.onSort} className="text-right" />
+                  <SortHeader label="Credit" sortKey="credit" activeKey={trialSort.sortKey} dir={trialSort.sortDir} onSort={trialSort.onSort} className="text-right" />
+                  <SortHeader label="Net" sortKey="net" activeKey={trialSort.sortKey} dir={trialSort.sortDir} onSort={trialSort.onSort} className="text-right" />
                 </tr>
               </thead>
               <tbody>
-                {(trial.rows || []).map((r) => (
+                {sortedTrial.map((r) => (
                   <tr key={r.code}>
                     <td>{r.code}</td>
                     <td>{r.name}</td>
@@ -114,14 +149,14 @@ export default function Ledger({ api, fy, refreshKey, initialTrial, initialAccou
             <table className="table table-striped table-sm bg-white">
               <thead>
                 <tr>
-                  <th>Code</th>
-                  <th>Account</th>
-                  <th>Type</th>
-                  <th className="text-right">Balance</th>
+                  <SortHeader label="Code" sortKey="code" activeKey={chartSort.sortKey} dir={chartSort.sortDir} onSort={chartSort.onSort} />
+                  <SortHeader label="Account" sortKey="account" activeKey={chartSort.sortKey} dir={chartSort.sortDir} onSort={chartSort.onSort} />
+                  <SortHeader label="Type" sortKey="type" activeKey={chartSort.sortKey} dir={chartSort.sortDir} onSort={chartSort.onSort} />
+                  <SortHeader label="Balance" sortKey="balance" activeKey={chartSort.sortKey} dir={chartSort.sortDir} onSort={chartSort.onSort} className="text-right" />
                 </tr>
               </thead>
               <tbody>
-                {accounts.map((a) => (
+                {sortedAccounts.map((a) => (
                   <tr key={a.code}>
                     <td>{a.code}</td>
                     <td>{a.name}</td>
@@ -168,15 +203,15 @@ export default function Ledger({ api, fy, refreshKey, initialTrial, initialAccou
             <table className="table table-striped table-sm bg-white">
               <thead>
                 <tr>
-                  <th>Date</th>
-                  <th>Direction</th>
-                  <th className="text-right">Amount</th>
-                  <th>Reference</th>
-                  <th>Client</th>
+                  <SortHeader label="Date" sortKey="date" activeKey={bankSort.sortKey} dir={bankSort.sortDir} onSort={bankSort.onSort} />
+                  <SortHeader label="Direction" sortKey="direction" activeKey={bankSort.sortKey} dir={bankSort.sortDir} onSort={bankSort.onSort} />
+                  <SortHeader label="Amount" sortKey="amount" activeKey={bankSort.sortKey} dir={bankSort.sortDir} onSort={bankSort.onSort} className="text-right" />
+                  <SortHeader label="Reference" sortKey="reference" activeKey={bankSort.sortKey} dir={bankSort.sortDir} onSort={bankSort.onSort} />
+                  <SortHeader label="Client" sortKey="client" activeKey={bankSort.sortKey} dir={bankSort.sortDir} onSort={bankSort.onSort} />
                 </tr>
               </thead>
               <tbody>
-                {bankShown.entries.map((e, i) => (
+                {sortedBankEntries.map((e, i) => (
                   <tr key={e.id || i}>
                     <td>{e.date}</td>
                     <td>{e.direction}</td>

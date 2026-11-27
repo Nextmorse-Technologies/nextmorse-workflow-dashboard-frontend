@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { friendlyError, money } from '../api.js';
 import { dateLabel, fyOfBs } from '../dates.js';
-import { displayNumber, GroupTable, isPettyInvoice, isSent, isTaxInvoice, lockedPettyCash } from './Invoices.jsx';
+import { SortHeader, sortInvoices, useTableSort } from '../sort.js';
+import { displayNumber, displayReceiptNumber, GroupTable, isPettyInvoice, isSent, isTaxInvoice, lockedPettyCash, receiptNumberValue } from './Invoices.jsx';
 
 /* The Petty cash register: the petty-cash invoices for the
    fiscal year (treatment no_vat/no_vat_no_tds, not in the
@@ -17,7 +18,7 @@ import { displayNumber, GroupTable, isPettyInvoice, isSent, isTaxInvoice, locked
    from the API and does not depend on it. */
 
 function receiptNumber(r) {
-  return r.display_number || '—';
+  return displayReceiptNumber(r);
 }
 
 export function total(items) {
@@ -29,6 +30,13 @@ export default function PettyCash({ api, refreshKey, fy, initialInvoices, initia
   const [receipts, setReceipts] = useState(initialReceipts || null);
   const [loading, setLoading] = useState(!initialInvoices || !initialReceipts);
   const [loadError, setLoadError] = useState('');
+  /* One sort state per table; each starts in its original order.
+     Each table sorts only the rows actually shown, after the
+     fiscal-year filter. */
+  const pettySort = useTableSort(null);
+  const lockedSort = useTableSort(null);
+  const unclassifiedSort = useTableSort(null);
+  const receiptSort = useTableSort(null);
 
   /* The whole invoice list (324 rows over two pages) plus the
      receipts, once — so the fiscal-year filter works client-side
@@ -88,9 +96,6 @@ export default function PettyCash({ api, refreshKey, fy, initialInvoices, initia
       r.is_petty_cash &&
       (effectiveFy === 'all' || fyOfBs(r.date_bs) === parseInt(effectiveFy.slice(0, 4), 10)));
 
-  /* Locked petty cash: the Paid petty invoices in this fiscal year. */
-  const lockedPetty = lockedPettyCash(shownInvoices);
-
   /* Sent invoices that are neither tax nor petty: most have no
      treatment recorded; invoice 100 (Kathalaya, VAT-only, no
      marker) fits neither either. Shown separately, never hidden,
@@ -102,6 +107,19 @@ export default function PettyCash({ api, refreshKey, fy, initialInvoices, initia
       !isTaxInvoice(inv) &&
       !isPettyInvoice(inv) &&
       (effectiveFy === 'all' || inv.fiscal_year === effectiveFy));
+
+  /* Locked petty cash: the Paid petty invoices in this fiscal year. */
+  const lockedPetty = sortInvoices(lockedPettyCash(shownInvoices), lockedSort.sortKey, lockedSort.sortDir);
+  const sortedPetty = sortInvoices(shownInvoices, pettySort.sortKey, pettySort.sortDir);
+  const sortedUnclassified = sortInvoices(unclassified, unclassifiedSort.sortKey, unclassifiedSort.sortDir);
+  const sortedReceipts = receiptSort.apply(shownReceipts, (r, key) => {
+    switch (key) {
+      case 'details': return r.covers || '';
+      case 'amount': return r.amount_npr;
+      case 'date': return r.date_ad || '';
+      default: return receiptNumberValue(r);
+    }
+  });
 
   return (
     <>
@@ -121,7 +139,7 @@ export default function PettyCash({ api, refreshKey, fy, initialInvoices, initia
                 Petty cash invoices — Subtotal: {money(total(shownInvoices))}
               </h4>
               {shownInvoices.length ? (
-                <GroupTable items={shownInvoices} onPrint={onPrintInvoice} />
+                <GroupTable items={sortedPetty} onPrint={onPrintInvoice} sortKey={pettySort.sortKey} sortDir={pettySort.sortDir} onSort={pettySort.onSort} />
               ) : (
                 <p className="text-muted mb-0">No petty cash invoices in this fiscal year.</p>
               )}
@@ -136,7 +154,7 @@ export default function PettyCash({ api, refreshKey, fy, initialInvoices, initia
                 Paid invoices in this fiscal year — cash that remains as petty cash.
               </p>
               {lockedPetty.length ? (
-                <GroupTable items={lockedPetty} onPrint={onPrintInvoice} />
+                <GroupTable items={lockedPetty} onPrint={onPrintInvoice} sortKey={lockedSort.sortKey} sortDir={lockedSort.sortDir} onSort={lockedSort.onSort} />
               ) : (
                 <p className="text-muted mb-0">No locked petty cash invoices in this fiscal year.</p>
               )}
@@ -151,7 +169,7 @@ export default function PettyCash({ api, refreshKey, fy, initialInvoices, initia
                 Sent invoices that are neither in the tax-invoice book nor petty cash — most have no treatment on file (no VAT, no TDS recorded); one carries a VAT-only treatment but no tax-invoice marker. They are listed here separately, never hidden, until confirmed.
               </p>
               {unclassified.length ? (
-                <GroupTable items={unclassified} onPrint={onPrintInvoice} />
+                <GroupTable items={sortedUnclassified} onPrint={onPrintInvoice} sortKey={unclassifiedSort.sortKey} sortDir={unclassifiedSort.sortDir} onSort={unclassifiedSort.onSort} />
               ) : (
                 <p className="text-muted mb-0">No unclassified invoices in this fiscal year.</p>
               )}
@@ -167,15 +185,15 @@ export default function PettyCash({ api, refreshKey, fy, initialInvoices, initia
                   <table className="table table-striped table-sm bg-white">
                     <thead>
                       <tr>
-                        <th>Receipt no. (paper s. no., if known)</th>
-                        <th>Details</th>
-                        <th className="text-right">Amount (NPR)</th>
-                        <th>Payment date</th>
+                        <SortHeader label="Receipt no." sortKey="number" activeKey={receiptSort.sortKey} dir={receiptSort.sortDir} onSort={receiptSort.onSort} />
+                        <SortHeader label="Details" sortKey="details" activeKey={receiptSort.sortKey} dir={receiptSort.sortDir} onSort={receiptSort.onSort} />
+                        <SortHeader label="Amount (NPR)" sortKey="amount" activeKey={receiptSort.sortKey} dir={receiptSort.sortDir} onSort={receiptSort.onSort} className="text-right" />
+                        <SortHeader label="Payment date" sortKey="date" activeKey={receiptSort.sortKey} dir={receiptSort.sortDir} onSort={receiptSort.onSort} />
                         <th></th>
                       </tr>
                     </thead>
                     <tbody>
-                      {shownReceipts.map((r) => (
+                      {sortedReceipts.map((r) => (
                         <tr key={r.id}>
                           <td>{receiptNumber(r)}</td>
                           <td>{r.covers || '—'}</td>

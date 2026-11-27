@@ -1,4 +1,5 @@
 import { money } from '../api.js';
+import { SortHeader, useTableSort } from '../sort.js';
 
 /* The fiscal year an audit or meeting belongs to, from its own
    fiscal_year label ('2083/84' → 2083). */
@@ -17,6 +18,12 @@ export function reportRowsForFy(rows, fy) {
 }
 
 export default function Reports({ data, fy }) {
+  /* One sort state per table; each starts in its original order.
+     Each table sorts only the rows actually shown, after the
+     fiscal-year filter (the shareholders are all-years by nature). */
+  const auditSort = useTableSort(null);
+  const meetingSort = useTableSort(null);
+  const holderSort = useTableSort(null);
   if (!data) return null;
   const holders = (data.shareholders && data.shareholders.holders) || [];
   /* The fiscal year comes from the shared picker in the tab bar
@@ -24,8 +31,28 @@ export default function Reports({ data, fy }) {
      shareholders are a standing record and the audit-log count is
      all-time — both stay, labelled. */
   const effectiveFy = fy || 'all';
-  const audits = reportRowsForFy(data.audits_on_file, effectiveFy);
-  const meetings = reportRowsForFy(data.meetings, effectiveFy);
+  const audits = auditSort.apply(reportRowsForFy(data.audits_on_file, effectiveFy), (a, key) => {
+    switch (key) {
+      case 'udin': return a.udin || '';
+      case 'opinion': return a.opinion || '';
+      default: return a.fiscal_year || '';
+    }
+  });
+  const meetings = meetingSort.apply(reportRowsForFy(data.meetings, effectiveFy), (m, key) => {
+    switch (key) {
+      case 'fy': return m.fiscal_year || '';
+      case 'date': return m.date || '';
+      case 'filing': return m.filed ? 'Filed' : 'Not filed';
+      default: return m.meeting_type || '';
+    }
+  });
+  const sortedHolders = holderSort.apply(holders, (h, key) => {
+    switch (key) {
+      case 'shares': return h.shares;
+      case 'paid': return h.paid;
+      default: return h.name || '';
+    }
+  });
   return (
     <>
       <h3 className="h5">Reports</h3>
@@ -40,9 +67,9 @@ export default function Reports({ data, fy }) {
         <table className="table table-striped table-sm bg-white">
           <thead>
             <tr>
-              <th>FY</th>
-              <th>UDIN</th>
-              <th>Opinion</th>
+              <SortHeader label="FY" sortKey="fy" activeKey={auditSort.sortKey} dir={auditSort.sortDir} onSort={auditSort.onSort} />
+              <SortHeader label="UDIN" sortKey="udin" activeKey={auditSort.sortKey} dir={auditSort.sortDir} onSort={auditSort.onSort} />
+              <SortHeader label="Opinion" sortKey="opinion" activeKey={auditSort.sortKey} dir={auditSort.sortDir} onSort={auditSort.onSort} />
             </tr>
           </thead>
           <tbody>
@@ -65,10 +92,10 @@ export default function Reports({ data, fy }) {
         <table className="table table-striped table-sm bg-white">
           <thead>
             <tr>
-              <th>Type</th>
-              <th>FY</th>
-              <th>Date</th>
-              <th>Filing</th>
+              <SortHeader label="Type" sortKey="type" activeKey={meetingSort.sortKey} dir={meetingSort.sortDir} onSort={meetingSort.onSort} />
+              <SortHeader label="FY" sortKey="fy" activeKey={meetingSort.sortKey} dir={meetingSort.sortDir} onSort={meetingSort.onSort} />
+              <SortHeader label="Date" sortKey="date" activeKey={meetingSort.sortKey} dir={meetingSort.sortDir} onSort={meetingSort.onSort} />
+              <SortHeader label="Filing" sortKey="filing" activeKey={meetingSort.sortKey} dir={meetingSort.sortDir} onSort={meetingSort.onSort} />
             </tr>
           </thead>
           <tbody>
@@ -91,13 +118,13 @@ export default function Reports({ data, fy }) {
         <table className="table table-striped table-sm bg-white">
           <thead>
             <tr>
-              <th>Name</th>
-              <th className="text-right">Shares</th>
-              <th className="text-right">Paid up</th>
+              <SortHeader label="Name" sortKey="name" activeKey={holderSort.sortKey} dir={holderSort.sortDir} onSort={holderSort.onSort} />
+              <SortHeader label="Shares" sortKey="shares" activeKey={holderSort.sortKey} dir={holderSort.sortDir} onSort={holderSort.onSort} className="text-right" />
+              <SortHeader label="Paid up" sortKey="paid" activeKey={holderSort.sortKey} dir={holderSort.sortDir} onSort={holderSort.onSort} className="text-right" />
             </tr>
           </thead>
           <tbody>
-            {holders.map((h, i) => (
+            {sortedHolders.map((h, i) => (
               <tr key={i}>
                 <td>{h.name}</td>
                 <td className="text-right">{h.shares}</td>

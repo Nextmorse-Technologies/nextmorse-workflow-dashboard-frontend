@@ -1,5 +1,7 @@
+import { useState } from 'react';
 import { money } from '../api.js';
 import { fyOfAd, fyOfBs } from '../dates.js';
+import { SortHeader, useTableSort } from '../sort.js';
 
 /* Fiscal year a bank entry belongs to — the starting BS year,
    from its BS date (AD as a fallback). */
@@ -53,11 +55,24 @@ export function bankForFy(entries, fy) {
 }
 
 export default function Bank({ data, fy }) {
+  /* One sort state for the register; it starts in its original
+     order. The table sorts only the entries actually shown, after
+     the fiscal-year filter. */
+  const sort = useTableSort(null);
   if (!data) return null;
   /* The fiscal year comes from the shared picker in the tab bar
      (App); this tab only filters on it. */
   const effectiveFy = fy || 'all';
   const { entries, deposits, withdrawals, net, balance } = bankForFy(data.entries, effectiveFy);
+  const sortedEntries = sort.apply(entries, (e, key) => {
+    switch (key) {
+      case 'direction': return e.direction || '';
+      case 'amount': return e.amount_npr;
+      case 'reference': return e.reference || '';
+      case 'client': return e.client === 'unknown' ? '' : (e.client || '');
+      default: return e.date_ad || e.date_bs || e.date || '';
+    }
+  });
   return (
     <>
       <h3 className="h5">
@@ -76,15 +91,15 @@ export default function Bank({ data, fy }) {
           <table className="table table-striped table-sm bg-white">
             <thead>
               <tr>
-                <th>Date</th>
-                <th>Direction</th>
-                <th className="text-right">Amount</th>
-                <th>Reference</th>
-                <th>Client</th>
+                <SortHeader label="Date" sortKey="date" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
+                <SortHeader label="Direction" sortKey="direction" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
+                <SortHeader label="Amount" sortKey="amount" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} className="text-right" />
+                <SortHeader label="Reference" sortKey="reference" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
+                <SortHeader label="Client" sortKey="client" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
               </tr>
             </thead>
             <tbody>
-              {entries.map((e, i) => (
+              {sortedEntries.map((e, i) => (
                 <tr key={e.id || i}>
                   <td>{e.date}</td>
                   <td>{e.direction}</td>

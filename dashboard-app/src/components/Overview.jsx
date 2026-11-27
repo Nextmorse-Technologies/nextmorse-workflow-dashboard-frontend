@@ -1,4 +1,5 @@
 import { money } from '../api.js';
+import { SortHeader, useTableSort } from '../sort.js';
 import Reports from './Reports.jsx';
 import Ledger from './Ledger.jsx';
 
@@ -16,12 +17,24 @@ function FigureCard({ title, value }) {
 }
 
 export default function Overview({ data, api, fy, refreshKey }) {
+  /* One sort state for the By fiscal year table; it starts in its
+     original order. The table sorts only the years actually shown. */
+  const sort = useTableSort(null);
   if (!data) return null;
   const f = data.figures || {};
   const at = f.all_time || {};
   const br = f.bank_register || {};
   const vat = f.vat || {};
   const tds = f.tds || {};
+  const sortedYears = sort.apply(f.by_fiscal_year || [], (r, key) => {
+    switch (key) {
+      case 'invoiced': return r.invoiced;
+      case 'received': return r.received;
+      case 'paid': return r.paid;
+      case 'profit': return r.profit;
+      default: return r.label || '';
+    }
+  });
   return (
     <>
       <h3 className="h5">Headline figures</h3>
@@ -43,15 +56,15 @@ export default function Overview({ data, api, fy, refreshKey }) {
         <table className="table table-striped table-sm bg-white">
           <thead>
             <tr>
-              <th>Fiscal year</th>
-              <th className="text-right">Invoiced</th>
-              <th className="text-right">Received</th>
-              <th className="text-right">Paid out</th>
-              <th className="text-right">Profit</th>
+              <SortHeader label="Fiscal year" sortKey="fy" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
+              <SortHeader label="Invoiced" sortKey="invoiced" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} className="text-right" />
+              <SortHeader label="Received" sortKey="received" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} className="text-right" />
+              <SortHeader label="Paid out" sortKey="paid" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} className="text-right" />
+              <SortHeader label="Profit" sortKey="profit" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} className="text-right" />
             </tr>
           </thead>
           <tbody>
-            {(f.by_fiscal_year || []).map((r) => (
+            {sortedYears.map((r) => (
               <tr key={r.label}>
                 <td>{r.label}</td>
                 <td className="text-right">{money(r.invoiced)}</td>

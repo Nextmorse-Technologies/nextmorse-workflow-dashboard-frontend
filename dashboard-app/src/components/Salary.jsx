@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useState } from 'react';
 import { friendlyError, money } from '../api.js';
 import { dateLabel } from '../dates.js';
+import { SortHeader, useTableSort } from '../sort.js';
 
 /* Salary — the monthly staff salaries and the Dashain allowance.
    The rates are standing facts confirmed by Bijaya (21 Nov 2026,
@@ -113,10 +114,35 @@ export default function Salary({ api, fy, refreshKey, initialInvoices }) {
   const paid = salaryRows(invoices, effectiveFy);
   const dashain = dashainRows(invoices, effectiveFy);
   const anyUnsplit = paid.rows.some((r) => splitSalary(r.amount_npr) === null);
+  /* One sort state per table; each starts in its original order
+     (rates in their set order, the paid list newest first). Each
+     table sorts only the rows actually shown, after the
+     fiscal-year filter. In the all-years view the paid list stays
+     grouped by fiscal year with its subtotal rows — the sort
+     orders the rows inside each year, never the groups. */
+  const rateSort = useTableSort(null);
+  const dashainSort = useTableSort(null);
+  const paidSort = useTableSort('paid', 'desc');
+  const paidDateOf = (r) => r.paid_date_ad || r.paid_date_bs || r.date_ad || r.date_bs || '';
+  const paidValueOf = (r, key) => {
+    switch (key) {
+      case 'amount': return r.amount_npr;
+      case 'kedar': { const s = splitSalary(r.amount_npr); return s ? s.kedar : null; }
+      case 'bijaya': { const s = splitSalary(r.amount_npr); return s ? s.bijaya : null; }
+      case 'anishma': { const s = splitSalary(r.amount_npr); return s ? s.anishma : null; }
+      default: return paidDateOf(r);
+    }
+  };
+  const sortedPaid = paidSort.apply(paid.rows, paidValueOf);
+  const sortedDashain = dashainSort.apply(dashain, (d, key) => (key === 'amount' ? d.amount_npr : paidDateOf(d)));
+  const sortedRates = rateSort.apply(SALARY_RATES, (r, key) => (key === 'annual' ? annualFor(r) : key === 'monthly' ? r.monthly : r.name));
 
-  /* Per-year subtotals for the all-years view, newest year first. */
+  /* Per-year subtotals for the all-years view, newest year first.
+     Built from the sorted rows, so a sort orders the rows inside
+     each year while the year groups and their subtotal rows stay
+     where they are. */
   const byFy = {};
-  paid.rows.forEach((r) => {
+  sortedPaid.forEach((r) => {
     const key = r.fiscal_year || 'No fiscal year';
     byFy[key] = byFy[key] || { rows: [], total: 0 };
     byFy[key].rows.push(r);
@@ -142,13 +168,13 @@ export default function Salary({ api, fy, refreshKey, initialInvoices }) {
           <table className="table table-sm mb-2">
             <thead>
               <tr>
-                <th>Person</th>
-                <th className="text-right">Monthly</th>
-                <th className="text-right">Annual (13 months)</th>
+                <SortHeader label="Person" sortKey="person" activeKey={rateSort.sortKey} dir={rateSort.sortDir} onSort={rateSort.onSort} />
+                <SortHeader label="Monthly" sortKey="monthly" activeKey={rateSort.sortKey} dir={rateSort.sortDir} onSort={rateSort.onSort} className="text-right" />
+                <SortHeader label="Annual (13 months)" sortKey="annual" activeKey={rateSort.sortKey} dir={rateSort.sortDir} onSort={rateSort.onSort} className="text-right" />
               </tr>
             </thead>
             <tbody>
-              {SALARY_RATES.map((r) => (
+              {sortedRates.map((r) => (
                 <tr key={r.name}>
                   <td>{r.name}</td>
                   <td className="text-right">{money(r.monthly)}</td>
@@ -184,12 +210,12 @@ export default function Salary({ api, fy, refreshKey, initialInvoices }) {
             <table className="table table-sm mb-0">
               <thead>
                 <tr>
-                  <th>Paid</th>
-                  <th className="text-right">Amount</th>
+                  <SortHeader label="Paid" sortKey="paid" activeKey={dashainSort.sortKey} dir={dashainSort.sortDir} onSort={dashainSort.onSort} />
+                  <SortHeader label="Amount" sortKey="amount" activeKey={dashainSort.sortKey} dir={dashainSort.sortDir} onSort={dashainSort.onSort} className="text-right" />
                 </tr>
               </thead>
               <tbody>
-                {dashain.map((d) => (
+                {sortedDashain.map((d) => (
                   <tr key={d.id}>
                     <td>{d.paid_date_ad || d.paid_date_bs ? dateLabel(d.paid_date_ad, d.paid_date_bs) : dateLabel(d.date_ad, d.date_bs)}</td>
                     <td className="text-right">{money(d.amount_npr)}</td>
@@ -228,11 +254,11 @@ export default function Salary({ api, fy, refreshKey, initialInvoices }) {
               <table className="table table-striped table-sm bg-white">
                 <thead>
                   <tr>
-                    <th>Paid</th>
-                    <th className="text-right">Amount</th>
-                    <th className="text-right">Kedar</th>
-                    <th className="text-right">Bijaya</th>
-                    <th className="text-right">Anishma</th>
+                    <SortHeader label="Paid" sortKey="paid" activeKey={paidSort.sortKey} dir={paidSort.sortDir} onSort={paidSort.onSort} />
+                    <SortHeader label="Amount" sortKey="amount" activeKey={paidSort.sortKey} dir={paidSort.sortDir} onSort={paidSort.onSort} className="text-right" />
+                    <SortHeader label="Kedar" sortKey="kedar" activeKey={paidSort.sortKey} dir={paidSort.sortDir} onSort={paidSort.onSort} className="text-right" />
+                    <SortHeader label="Bijaya" sortKey="bijaya" activeKey={paidSort.sortKey} dir={paidSort.sortDir} onSort={paidSort.onSort} className="text-right" />
+                    <SortHeader label="Anishma" sortKey="anishma" activeKey={paidSort.sortKey} dir={paidSort.sortDir} onSort={paidSort.onSort} className="text-right" />
                   </tr>
                 </thead>
                 <tbody>
@@ -260,7 +286,7 @@ export default function Salary({ api, fy, refreshKey, initialInvoices }) {
                       </Fragment>
                     ))
                   ) : (
-                    paid.rows.map((r) => {
+                    sortedPaid.map((r) => {
                       const split = splitSalary(r.amount_npr);
                       return (
                         <tr key={r.id}>

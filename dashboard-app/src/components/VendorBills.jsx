@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { friendlyError, money } from '../api.js';
 import { dateLabel } from '../dates.js';
+import { SortHeader, useTableSort } from '../sort.js';
 import { statusBadge } from './Invoices.jsx';
 
 /* The Laravel /billing/vendors page, from the API — and it follows
@@ -64,6 +65,48 @@ export function groupPaidBills(invoices, fy) {
     .sort((a, b) => b.total - a.total);
 }
 
+/* One supplier's paid bills, with its own sort state — the table
+   sorts only the bills actually shown, after the fiscal-year
+   filter. It starts newest first, as before. */
+function PaidGroup({ group }) {
+  const sort = useTableSort('paid', 'desc');
+  const sorted = sort.apply(group.bills, (b, key) => {
+    switch (key) {
+      case 'service': return b.service || '';
+      case 'amount': return b.amount_npr;
+      case 'paid': return b.paid_date_ad || b.paid_date_bs || '';
+      default: return b.invoice_number || '';
+    }
+  });
+  return (
+    <div>
+      <h5 className="h6 mt-3">{group.name} — {money(group.total)}</h5>
+      <div className="table-responsive">
+        <table className="table table-striped table-sm bg-white">
+          <thead>
+            <tr>
+              <SortHeader label="Invoice no." sortKey="number" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
+              <SortHeader label="Service" sortKey="service" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
+              <SortHeader label="Amount" sortKey="amount" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} className="text-right" />
+              <SortHeader label="Paid" sortKey="paid" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.map((b) => (
+              <tr key={b.id}>
+                <td>{b.invoice_number || '—'}</td>
+                <td>{b.service}</td>
+                <td className="text-right">{money(b.amount_npr)}</td>
+                <td>{b.paid_date_ad || b.paid_date_bs ? dateLabel(b.paid_date_ad, b.paid_date_bs) : '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 export default function VendorBills({ api, refreshKey, fy, initialInvoices }) {
   const effectiveFy = fy || 'all';
   const [invoices, setInvoices] = useState(initialInvoices || null);
@@ -101,12 +144,34 @@ export default function VendorBills({ api, refreshKey, fy, initialInvoices }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshKey]);
 
+  /* One sort state per table. The open bills start newest first
+     and the suppliers totals start biggest first, as before;
+     each table sorts only the rows actually shown, after the
+     fiscal-year filter. */
+  const openSort = useTableSort('issued', 'desc');
+  const totalsSort = useTableSort('total', 'desc');
+
   const inFy = (inv) => effectiveFy === 'all' || inv.fiscal_year === effectiveFy;
-  const openBills = (invoices || [])
-    .filter((b) => b.kind === 'received' && b.status !== 'Paid' && inFy(b))
-    .sort((a, b) => String(b.date_ad || '').localeCompare(String(a.date_ad || '')));
+  const openBills = openSort.apply(
+    (invoices || []).filter((b) => b.kind === 'received' && b.status !== 'Paid' && inFy(b)),
+    (b, key) => {
+      switch (key) {
+        case 'supplier': return b.client_name || '';
+        case 'service': return b.service || '';
+        case 'amount': return b.amount_npr;
+        case 'status': return b.status || '';
+        case 'issued': return b.date_ad || '';
+        default: return b.invoice_number || '';
+      }
+    });
   const owed = openBills.reduce((sum, b) => sum + (Number(b.remaining_amount_npr) || 0), 0);
-  const paidRows = paidSupplierTotals(invoices, effectiveFy);
+  const paidRows = totalsSort.apply(paidSupplierTotals(invoices, effectiveFy), (s, key) => {
+    switch (key) {
+      case 'payments': return s.count;
+      case 'total': return s.total;
+      default: return s.name || '';
+    }
+  });
   const paidGroups = groupPaidBills(invoices, effectiveFy);
 
   return (
@@ -126,12 +191,12 @@ export default function VendorBills({ api, refreshKey, fy, initialInvoices }) {
               <table className="table table-striped table-sm bg-white">
                 <thead>
                   <tr>
-                    <th>Invoice no.</th>
-                    <th>Supplier</th>
-                    <th>Service</th>
-                    <th className="text-right">Amount</th>
-                    <th>Status</th>
-                    <th>Issued</th>
+                    <SortHeader label="Invoice no." sortKey="number" activeKey={openSort.sortKey} dir={openSort.sortDir} onSort={openSort.onSort} />
+                    <SortHeader label="Supplier" sortKey="supplier" activeKey={openSort.sortKey} dir={openSort.sortDir} onSort={openSort.onSort} />
+                    <SortHeader label="Service" sortKey="service" activeKey={openSort.sortKey} dir={openSort.sortDir} onSort={openSort.onSort} />
+                    <SortHeader label="Amount" sortKey="amount" activeKey={openSort.sortKey} dir={openSort.sortDir} onSort={openSort.onSort} className="text-right" />
+                    <SortHeader label="Status" sortKey="status" activeKey={openSort.sortKey} dir={openSort.sortDir} onSort={openSort.onSort} />
+                    <SortHeader label="Issued" sortKey="issued" activeKey={openSort.sortKey} dir={openSort.sortDir} onSort={openSort.onSort} />
                   </tr>
                 </thead>
                 <tbody>
@@ -154,31 +219,7 @@ export default function VendorBills({ api, refreshKey, fy, initialInvoices }) {
             <p className="text-muted">No paid vendor bills{effectiveFy === 'all' ? '' : ' in ' + effectiveFy}.</p>
           ) : (
             paidGroups.map((g) => (
-              <div key={g.name}>
-                <h5 className="h6 mt-3">{g.name} — {money(g.total)}</h5>
-                <div className="table-responsive">
-                  <table className="table table-striped table-sm bg-white">
-                    <thead>
-                      <tr>
-                        <th>Invoice no.</th>
-                        <th>Service</th>
-                        <th className="text-right">Amount</th>
-                        <th>Paid</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {g.bills.map((b) => (
-                        <tr key={b.id}>
-                          <td>{b.invoice_number || '—'}</td>
-                          <td>{b.service}</td>
-                          <td className="text-right">{money(b.amount_npr)}</td>
-                          <td>{b.paid_date_ad || b.paid_date_bs ? dateLabel(b.paid_date_ad, b.paid_date_bs) : '—'}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
+              <PaidGroup key={g.name} group={g} />
             ))
           )}
           <h4 className="h6 mt-3">Owed to vendors</h4>
@@ -191,9 +232,9 @@ export default function VendorBills({ api, refreshKey, fy, initialInvoices }) {
               <table className="table table-striped table-sm bg-white">
                 <thead>
                   <tr>
-                    <th>Supplier</th>
-                    <th className="text-right">Payments</th>
-                    <th className="text-right">Total paid</th>
+                    <SortHeader label="Supplier" sortKey="supplier" activeKey={totalsSort.sortKey} dir={totalsSort.sortDir} onSort={totalsSort.onSort} />
+                    <SortHeader label="Payments" sortKey="payments" activeKey={totalsSort.sortKey} dir={totalsSort.sortDir} onSort={totalsSort.onSort} className="text-right" />
+                    <SortHeader label="Total paid" sortKey="total" activeKey={totalsSort.sortKey} dir={totalsSort.sortDir} onSort={totalsSort.onSort} className="text-right" />
                   </tr>
                 </thead>
                 <tbody>

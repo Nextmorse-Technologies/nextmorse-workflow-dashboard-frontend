@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { friendlyError, money } from '../api.js';
 import { dateLabel, fyOfAd } from '../dates.js';
+import { SortHeader, useTableSort } from '../sort.js';
 
 /* The Laravel /billing/rules page, from the API: the recurring
    charges (AMCs), with treatment and TDS status. The rules endpoint
@@ -45,6 +46,66 @@ export function rulesForFy(rows, fy) {
   });
   return { shown, undated };
 }
+/* One rules table, with its own sort state — each table sorts
+   only the rules actually shown, after the fiscal-year filter.
+   It starts in its original order (client, then rule). The
+   Issue invoice column has no sort; it is an action. */
+function RuleTable({ rows, clientNames, clientDomains, onIssueInvoice }) {
+  const sort = useTableSort(null);
+  const sorted = sort.apply(rows, (r, key) => {
+    switch (key) {
+      case 'service': return r.service || '';
+      case 'cycle': return r.cycle || '';
+      case 'amount': return r.amount_npr;
+      case 'treatment': return r.treatment || '';
+      case 'tds': return r.tds_status || '';
+      case 'nextDue': return r.next_due_ad || '';
+      default: return clientNames[r.client_id] || '';
+    }
+  });
+  const ruleRow = (r) => (
+    <tr key={r.id}>
+      <td>{clientNames[r.client_id] || '—'}</td>
+      <td>{r.service}</td>
+      <td>{r.cycle || '—'}</td>
+      <td className="text-right">{r.amount_npr != null ? money(r.amount_npr) : '—'}</td>
+      <td>{r.treatment || '—'}</td>
+      <td>{r.tds_status || '—'}</td>
+      <td>{r.next_due_ad ? dateLabel(r.next_due_ad) : '—'}</td>
+      <td>
+        <button
+          type="button"
+          className="btn btn-sm btn-primary"
+          onClick={() => onIssueInvoice && onIssueInvoice(r, clientNames[r.client_id] || '', clientDomains[r.client_id] || '')}
+        >
+          Issue invoice
+        </button>
+      </td>
+    </tr>
+  );
+  return (
+    <div className="table-responsive">
+      <table className="table table-striped table-sm bg-white">
+        <thead>
+          <tr>
+            <SortHeader label="Client" sortKey="client" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
+            <SortHeader label="Service" sortKey="service" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
+            <SortHeader label="Cycle" sortKey="cycle" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
+            <SortHeader label="Amount" sortKey="amount" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} className="text-right" />
+            <SortHeader label="Treatment" sortKey="treatment" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
+            <SortHeader label="TDS" sortKey="tds" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
+            <SortHeader label="Next due" sortKey="nextDue" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
+            <th>Invoice</th>
+          </tr>
+        </thead>
+        <tbody>
+          {sorted.map(ruleRow)}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export default function BillingRules({ api, clients, refreshKey, fy, onIssueInvoice, initialRules, initialClientNames, initialClientDomains }) {
   const [rules, setRules] = useState(initialRules || null);
   const [clientNames, setClientNames] = useState(initialClientNames || {});
@@ -102,49 +163,6 @@ export default function BillingRules({ api, clients, refreshKey, fy, onIssueInvo
   const undatedSorted = undated.slice().sort((a, b) => (a.client_id - b.client_id) || (a.id - b.id));
   const hiddenCount = (rules || []).length - activeRules(rules).length;
 
-  const ruleRow = (r) => (
-    <tr key={r.id}>
-      <td>{clientNames[r.client_id] || '—'}</td>
-      <td>{r.service}</td>
-      <td>{r.cycle || '—'}</td>
-      <td className="text-right">{r.amount_npr != null ? money(r.amount_npr) : '—'}</td>
-      <td>{r.treatment || '—'}</td>
-      <td>{r.tds_status || '—'}</td>
-      <td>{r.next_due_ad ? dateLabel(r.next_due_ad) : '—'}</td>
-      <td>
-        <button
-          type="button"
-          className="btn btn-sm btn-primary"
-          onClick={() => onIssueInvoice && onIssueInvoice(r, clientNames[r.client_id] || '', clientDomains[r.client_id] || '')}
-        >
-          Issue invoice
-        </button>
-      </td>
-    </tr>
-  );
-
-  const ruleTable = (rows) => (
-    <div className="table-responsive">
-      <table className="table table-striped table-sm bg-white">
-        <thead>
-          <tr>
-            <th>Client</th>
-            <th>Service</th>
-            <th>Cycle</th>
-            <th className="text-right">Amount</th>
-            <th>Treatment</th>
-            <th>TDS</th>
-            <th>Next due</th>
-            <th>Invoice</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map(ruleRow)}
-        </tbody>
-      </table>
-    </div>
-  );
-
   return (
     <>
       <h3 className="h5">Billing Rules</h3>
@@ -169,7 +187,7 @@ export default function BillingRules({ api, clients, refreshKey, fy, onIssueInvo
             {sorted.length === 0 ? (
               <p className="text-muted">No rules due in this fiscal year.</p>
             ) : (
-              ruleTable(sorted)
+              <RuleTable rows={sorted} clientNames={clientNames} clientDomains={clientDomains} onIssueInvoice={onIssueInvoice} />
             )}
             {undatedSorted.length > 0 && (
               <>
@@ -179,7 +197,7 @@ export default function BillingRules({ api, clients, refreshKey, fy, onIssueInvo
                   be placed in a fiscal year — they are listed here instead
                   of being hidden.
                 </p>
-                {ruleTable(undatedSorted)}
+                <RuleTable rows={undatedSorted} clientNames={clientNames} clientDomains={clientDomains} onIssueInvoice={onIssueInvoice} />
               </>
             )}
           </>

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { friendlyError, money } from '../api.js';
 import { BS_MONTHS, dateLabel, fyOfBs, fyString, parseBs } from '../dates.js';
+import { SortHeader, useTableSort } from '../sort.js';
 import { tdsAmountOf, tdsLabel } from './VendorServices.jsx';
 import { RPM_NAME, RPM_UTILITY_LABEL } from './VendorBills.jsx';
 
@@ -158,6 +159,28 @@ export default function RentUtilities({ api, services, meta, fy, refreshKey, ini
   const tds = rent ? rentTds(rent, calc.elapsed) : null;
   const bills = rentUtilityBills(invoices, effectiveFy);
   const calcFy = calc.fyStart ? fyString(calc.fyStart) : effectiveFy;
+  /* One sort state per table; each starts in its original order
+     (utilities by service name, bills newest first). Each table
+     sorts only the rows actually shown, after the fiscal-year
+     filter. */
+  const utilitySort = useTableSort(null);
+  const billSort = useTableSort('paid', 'desc');
+  const sortedUtilities = utilitySort.apply(utilities, (s, key) => {
+    switch (key) {
+      case 'cycle': return s.cycle || '';
+      case 'amount': return s.amount_npr;
+      case 'notes': return s.notes || '';
+      default: return s.service || '';
+    }
+  });
+  const sortedBills = billSort.apply(bills.rows, (b, key) => {
+    switch (key) {
+      case 'service': return b.service || '';
+      case 'type': return b.kind === 'paid_rent' ? 'Rent' : 'Utility';
+      case 'amount': return b.amount_npr;
+      default: return b.paid_date_ad || b.paid_date_bs || b.date_ad || b.date_bs || '';
+    }
+  });
 
   return (
     <div>
@@ -241,14 +264,14 @@ export default function RentUtilities({ api, services, meta, fy, refreshKey, ini
         <table className="table table-sm">
           <thead>
             <tr>
-              <th>Service</th>
-              <th>Cycle</th>
-              <th>Amount</th>
-              <th>Notes</th>
+              <SortHeader label="Service" sortKey="service" activeKey={utilitySort.sortKey} dir={utilitySort.sortDir} onSort={utilitySort.onSort} />
+              <SortHeader label="Cycle" sortKey="cycle" activeKey={utilitySort.sortKey} dir={utilitySort.sortDir} onSort={utilitySort.onSort} />
+              <SortHeader label="Amount" sortKey="amount" activeKey={utilitySort.sortKey} dir={utilitySort.sortDir} onSort={utilitySort.onSort} />
+              <SortHeader label="Notes" sortKey="notes" activeKey={utilitySort.sortKey} dir={utilitySort.sortDir} onSort={utilitySort.onSort} />
             </tr>
           </thead>
           <tbody>
-            {utilities.map((s) => (
+            {sortedUtilities.map((s) => (
               <tr key={s.id}>
                 <td>{s.service}</td>
                 <td>{s.cycle === 'monthly' ? 'Monthly' : (s.cycle || '—')}</td>
@@ -276,14 +299,14 @@ export default function RentUtilities({ api, services, meta, fy, refreshKey, ini
               <table className="table table-striped table-sm bg-white">
                 <thead>
                   <tr>
-                    <th>Paid</th>
-                    <th>Service</th>
-                    <th>Type</th>
-                    <th className="text-right">Amount</th>
+                    <SortHeader label="Paid" sortKey="paid" activeKey={billSort.sortKey} dir={billSort.sortDir} onSort={billSort.onSort} />
+                    <SortHeader label="Service" sortKey="service" activeKey={billSort.sortKey} dir={billSort.sortDir} onSort={billSort.onSort} />
+                    <SortHeader label="Type" sortKey="type" activeKey={billSort.sortKey} dir={billSort.sortDir} onSort={billSort.onSort} />
+                    <SortHeader label="Amount" sortKey="amount" activeKey={billSort.sortKey} dir={billSort.sortDir} onSort={billSort.onSort} className="text-right" />
                   </tr>
                 </thead>
                 <tbody>
-                  {bills.rows.map((b) => (
+                  {sortedBills.map((b) => (
                     <tr key={b.id}>
                       <td>{b.paid_date_ad || b.paid_date_bs ? dateLabel(b.paid_date_ad, b.paid_date_bs) : dateLabel(b.date_ad, b.date_bs)}</td>
                       <td>{b.service || '—'}</td>

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import MenuPicker from './MenuPicker';
 import { fieldErrors, friendlyError, money } from '../api.js';
 import { dateLabel } from '../dates.js';
+import { SortHeader, useTableSort } from '../sort.js';
 import { SUPPLIERS, SUPPLIER_OTHER } from '../suppliers.js';
 import { RPM_NAME, RPM_UTILITY_LABEL } from './VendorBills.jsx';
 
@@ -142,6 +143,24 @@ export default function VendorServices({ api, services, onWrote, fy, refreshKey,
   const activity = serviceActivity(rows, invoices, effectiveFy);
   const activityById = {};
   activity.forEach((a) => { activityById[a.service.id] = a; });
+  /* One sort state for the services table; it starts in its
+     original order (supplier, then service). The table sorts only
+     the services actually shown; the Bills column sorts by how
+     many bills each service has in the picked year. */
+  const sort = useTableSort(null);
+  const sortedRows = sort.apply(rows, (s, key) => {
+    const a = activityById[s.id] || { count: 0, total: 0 };
+    switch (key) {
+      case 'service': return s.service || '';
+      case 'cycle': return CYCLE_LABELS[s.cycle] || s.cycle || '';
+      case 'amount': return s.amount_npr;
+      case 'vat': return s.vat_included ? '13% included' : 'No VAT';
+      case 'tds': return tdsLabel(s) || '';
+      case 'nextDue': return s.next_due_ad || '';
+      case 'bills': return a.count;
+      default: return s.supplier || '';
+    }
+  });
 
   const [vsSupplier, setVsSupplier] = useState('');
   const [vsSupplierOther, setVsSupplierOther] = useState('');
@@ -230,18 +249,18 @@ export default function VendorServices({ api, services, onWrote, fy, refreshKey,
           <table className="table table-sm">
             <thead>
               <tr>
-                <th>Supplier</th>
-                <th>Service</th>
-                <th>Cycle</th>
-                <th>Amount</th>
-                <th>VAT</th>
-                <th>TDS</th>
-                <th>Next due</th>
-                <th className="text-right">Bills{effectiveFy === 'all' ? '' : ' in ' + effectiveFy}</th>
+                <SortHeader label="Supplier" sortKey="supplier" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
+                <SortHeader label="Service" sortKey="service" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
+                <SortHeader label="Cycle" sortKey="cycle" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
+                <SortHeader label="Amount" sortKey="amount" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
+                <SortHeader label="VAT" sortKey="vat" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
+                <SortHeader label="TDS" sortKey="tds" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
+                <SortHeader label="Next due" sortKey="nextDue" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
+                <SortHeader label={'Bills' + (effectiveFy === 'all' ? '' : ' in ' + effectiveFy)} sortKey="bills" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} className="text-right" />
               </tr>
             </thead>
             <tbody>
-              {rows.map((s) => {
+              {sortedRows.map((s) => {
                 const a = activityById[s.id] || { count: 0, total: 0 };
                 return (
                   <tr key={s.id}>

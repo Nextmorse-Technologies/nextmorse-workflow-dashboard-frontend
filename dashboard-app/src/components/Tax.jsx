@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { money } from '../api.js';
 import { dateLabel, fyOfAd, fyOfBs, fyString } from '../dates.js';
+import { SortHeader, useTableSort } from '../sort.js';
 
 /* The fiscal year a tax row belongs to — the starting BS year.
    Order: the row's own fiscal_year, then its linked invoice's
@@ -53,22 +54,26 @@ export function taxRowsForFy(rows, fy) {
   return { shown, unplaced };
 }
 
-function TaxTable({ rows }) {
+/* The tax rows table. The caller sorts the rows and passes the
+   sort state, so every heading is a sort button. The sort values
+   come from the row as shown: FY from taxRowFy, the invoice number
+   as its FY-number label, the due date from its AD date. */
+function TaxTable({ rows, sortKey, sortDir, onSort }) {
   return (
     <div className="table-responsive">
       <table className="table table-striped table-sm bg-white">
         <thead>
           <tr>
-            <th>FY</th>
-            <th>Invoice no.</th>
-            <th>Client</th>
-            <th>Item</th>
-            <th className="text-right">Amount</th>
-            <th className="text-right">Turnover</th>
-            <th>Due</th>
-            <th>Status</th>
-            <th>Certificate no.</th>
-            <th>Flag</th>
+            <SortHeader label="FY" sortKey="fy" activeKey={sortKey} dir={sortDir} onSort={onSort} />
+            <SortHeader label="Invoice no." sortKey="number" activeKey={sortKey} dir={sortDir} onSort={onSort} />
+            <SortHeader label="Client" sortKey="client" activeKey={sortKey} dir={sortDir} onSort={onSort} />
+            <SortHeader label="Item" sortKey="item" activeKey={sortKey} dir={sortDir} onSort={onSort} />
+            <SortHeader label="Amount" sortKey="amount" activeKey={sortKey} dir={sortDir} onSort={onSort} className="text-right" />
+            <SortHeader label="Turnover" sortKey="turnover" activeKey={sortKey} dir={sortDir} onSort={onSort} className="text-right" />
+            <SortHeader label="Due" sortKey="due" activeKey={sortKey} dir={sortDir} onSort={onSort} />
+            <SortHeader label="Status" sortKey="status" activeKey={sortKey} dir={sortDir} onSort={onSort} />
+            <SortHeader label="Certificate no." sortKey="certificate" activeKey={sortKey} dir={sortDir} onSort={onSort} />
+            <SortHeader label="Flag" sortKey="flag" activeKey={sortKey} dir={sortDir} onSort={onSort} />
           </tr>
         </thead>
         <tbody>
@@ -135,9 +140,32 @@ export default function Tax({ data, fy, api, initialFigures }) {
     return () => { cancelled = true; };
   }, [api, effectiveFy]);
 
+  /* One sort state per table; each starts in its original order.
+     Each table sorts only the rows actually shown, after the
+     fiscal-year filter. */
+  const shownSort = useTableSort(null);
+  const unplacedSort = useTableSort(null);
+
   if (!data) return null;
   const rows = data.rows || [];
   const { shown, unplaced } = taxRowsForFy(rows, effectiveFy);
+  const taxValueOf = (r, key) => {
+    switch (key) {
+      case 'fy': return taxRowFy(r);
+      case 'number': return invoiceNumberLabel(r);
+      case 'client': return r.client_name || '';
+      case 'item': return r.item || '';
+      case 'amount': return r.amount_npr;
+      case 'turnover': return r.turnover_npr;
+      case 'due': return r.due_ad || '';
+      case 'status': return r.status || '';
+      case 'certificate': return (r.certificate && r.certificate.clearance_no) || '';
+      case 'flag': return (r.flags || []).join('; ');
+      default: return '';
+    }
+  };
+  const sortedShown = shownSort.apply(shown, taxValueOf);
+  const sortedUnplaced = unplacedSort.apply(unplaced, taxValueOf);
   const vat = (figures && figures.vat) || {};
   const tds = (figures && figures.tds) || {};
   return (
@@ -176,7 +204,7 @@ export default function Tax({ data, fy, api, initialFigures }) {
         </>
       )}
       {shown.length ? (
-        <TaxTable rows={shown} />
+        <TaxTable rows={sortedShown} sortKey={shownSort.sortKey} sortDir={shownSort.sortDir} onSort={shownSort.onSort} />
       ) : (
         <p className="text-muted">No tax records in this fiscal year.</p>
       )}
@@ -188,7 +216,7 @@ export default function Tax({ data, fy, api, initialFigures }) {
             explanation, clearance tasks and registrations — so they are
             listed here instead of being hidden.
           </p>
-          <TaxTable rows={unplaced} />
+          <TaxTable rows={sortedUnplaced} sortKey={unplacedSort.sortKey} sortDir={unplacedSort.sortDir} onSort={unplacedSort.onSort} />
         </>
       )}
     </>
