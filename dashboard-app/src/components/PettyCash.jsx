@@ -3,15 +3,18 @@ import { friendlyError, money } from '../api.js';
 import { dateLabel, fyOfBs } from '../dates.js';
 import { displayNumber, GroupTable, isPettyInvoice, isSent, isTaxInvoice, lockedPettyCash } from './Invoices.jsx';
 
-/* The Petty cash register: the no-VAT-no-TDS invoices for the
-   fiscal year, then the locked (paid) petty cash invoices, then
-   the receipts that pay only those invoices. Lists only — nothing
-   here is government-tracked. A separate card lists the sent
-   invoices whose treatment was never recorded — no VAT and no TDS
-   on them, but unclassified until Bijaya confirms they are petty
-   cash. The live Laravel page has no locked card (its Locked card
-   view was never pushed) — that view is still unpushed; this React
-   card reads from the API and does not depend on it. */
+/* The Petty cash register: the petty-cash invoices for the
+   fiscal year (treatment no_vat/no_vat_no_tds, not in the
+   tax-invoice book), then the locked (paid) petty cash invoices,
+   then the receipts that pay only those invoices. Lists only —
+   nothing here is government-tracked. A separate card lists the
+   sent invoices that fit neither tax nor petty cash — most have
+   no treatment recorded; one (Kathalaya, 55,000, FY 2079/80)
+   carries a VAT-only treatment but no tax-invoice marker. They
+   stay listed separately, never hidden, until confirmed. The live
+   Laravel page has no locked card (its Locked card view was never
+   pushed) — that view is still unpushed; this React card reads
+   from the API and does not depend on it. */
 
 function receiptNumber(r) {
   return r.display_number || '—';
@@ -88,9 +91,10 @@ export default function PettyCash({ api, refreshKey, fy, initialInvoices, initia
   /* Locked petty cash: the Paid petty invoices in this fiscal year. */
   const lockedPetty = lockedPettyCash(shownInvoices);
 
-  /* Sent invoices that are neither tax nor petty — their treatment
-     was never recorded. Shown separately, never hidden, until
-     Bijaya confirms they are petty cash. */
+  /* Sent invoices that are neither tax nor petty: most have no
+     treatment recorded; invoice 100 (Kathalaya, VAT-only, no
+     marker) fits neither either. Shown separately, never hidden,
+     until Bijaya confirms they are petty cash. */
   const unclassified = !invoices
     ? []
     : invoices.filter((inv) =>
@@ -141,10 +145,10 @@ export default function PettyCash({ api, refreshKey, fy, initialInvoices, initia
           <div className="card mb-4">
             <div className="card-body">
               <h4 className="card-title h6">
-                Invoices with no treatment recorded — Subtotal: {money(total(unclassified))}
+                Invoices that fit neither tax nor petty cash — Subtotal: {money(total(unclassified))}
               </h4>
               <p className="text-muted small">
-                Sent invoices with no treatment on file — no VAT and no TDS recorded. They are listed here separately, not as petty cash, until confirmed.
+                Sent invoices that are neither in the tax-invoice book nor petty cash — most have no treatment on file (no VAT, no TDS recorded); one carries a VAT-only treatment but no tax-invoice marker. They are listed here separately, never hidden, until confirmed.
               </p>
               {unclassified.length ? (
                 <GroupTable items={unclassified} onPrint={onPrintInvoice} />

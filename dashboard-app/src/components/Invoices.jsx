@@ -11,20 +11,26 @@ import { dateLabel, fyOfAd, fyOfBs, fyString } from '../dates.js';
    created through the existing credit-note flow, not from this
    card. */
 
-/* A tax invoice, the same rule as InvoiceNumbering::isTaxInvoice:
-   a VAT treatment, or any VAT charged. */
+/* A tax invoice: only the paper tax-invoice book counts — the
+   marker tax_invoice_issued ('tax invoice') set. Bijaya's rule
+   (27 Nov 2026): "if not in book its not tax invoice". This is
+   NOT the server's InvoiceNumbering::isTaxInvoice rule (a VAT
+   treatment, or any VAT charged) — that rule leaks rows onto the
+   tax tab, e.g. invoice 39 (Mutu, VAT 1,950 on the row, no
+   marker). */
 export function isTaxInvoice(inv) {
-  return ['vat_tds', 'vat_only'].includes(inv.treatment) ||
-    (Number(inv.vat_npr) || 0) > 0;
+  return !!inv.tax_invoice_issued;
 }
 
-/* A petty-cash invoice: no VAT and no TDS. Treatment no_vat or
-   no_vat_no_tds with no VAT and no TDS charged. A row whose
-   treatment was never recorded is NOT petty — it is unclassified. */
+/* A petty-cash invoice: treatment no_vat or no_vat_no_tds, and
+   NOT in the tax-invoice book (no marker). No amount check — a
+   row stays petty cash by its treatment and the book rule even
+   when VAT is recorded on it (invoice 39, Mutu, VAT 1,950); the
+   VAT totals already exclude it. A row whose treatment was never
+   recorded is NOT petty — it is unclassified. */
 export function isPettyInvoice(inv) {
   return ['no_vat', 'no_vat_no_tds'].includes(inv.treatment) &&
-    (Number(inv.vat_npr) || 0) === 0 &&
-    (Number(inv.tds_npr) || 0) === 0;
+    !inv.tax_invoice_issued;
 }
 
 /* The fiscal-year label for a petty invoice with no stored
@@ -65,8 +71,9 @@ export function lockedTax(rows) {
 }
 
 /* Locked petty cash: Paid petty-cash invoices (kind sent only).
-   A row with VAT charged is a tax invoice, not petty cash, even
-   when its treatment says no_vat_no_tds. */
+   A row stays petty cash by its treatment and no marker, even
+   when VAT is recorded on it (invoice 39, Mutu, VAT 1,950) —
+   the book rule decides, not the amount. */
 export function lockedPettyCash(rows) {
   return rows.filter((inv) =>
     inv.kind === 'sent' &&
@@ -227,7 +234,7 @@ export default function Invoices({ api, refreshKey, fy, initialRows, initialCred
                 Tax invoices — Subtotal: {money(groupTotal(taxInvoices))}
               </h4>
               <p className="text-muted small">
-                Tax invoices only — VAT charged, with or without TDS. Petty cash lives on its own tab.
+                Tax invoices only — the paper tax-invoice book. A row without the tax-invoice marker is not a tax invoice, even when VAT is recorded on it. Petty cash lives on its own tab.
               </p>
               {taxInvoices.length ? (
                 <GroupTable items={taxInvoices} onPrint={onPrintInvoice} />
