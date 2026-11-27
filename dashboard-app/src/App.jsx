@@ -18,6 +18,7 @@ import Billing from './components/Billing.jsx';
 import BillingRules from './components/BillingRules.jsx';
 import VendorBills from './components/VendorBills.jsx';
 import VendorServices from './components/VendorServices.jsx';
+import RentUtilities from './components/RentUtilities.jsx';
 import MenuPicker from './components/MenuPicker.jsx';
 
 const TABS = [
@@ -31,6 +32,7 @@ const TABS = [
   { key: 'vendor-services', label: 'Vendor services' },
   { key: 'rules', label: 'Billing rules' },
   { key: 'billing', label: 'Billing' },
+  { key: 'rent-utilities', label: 'Rent and utilities' },
 ];
 
 function Header({ signedIn, onReload, onSignOut }) {
@@ -378,6 +380,7 @@ export default function App() {
     if (key === 'petty') return; /* the tab loads its own lists */
     if (key === 'vendor') return; /* the tab loads its own lists */
     if (key === 'vendor-services') return; /* the list loads at sign-in */
+    if (key === 'rent-utilities') return; /* the tab loads its own list */
     if (key === 'rules') return; /* the tab loads its own list */
     if (!sections[key]) loadSection(key);
   }
@@ -516,6 +519,15 @@ export default function App() {
                         onPrefillApplied={() => setBillingPrefill(null)}
                         vendorRefresh={vendorRefresh}
                         vendorServices={vendorServices}
+                      />
+                    )}
+                    {activeTab === 'rent-utilities' && (
+                      <RentUtilities
+                        api={api}
+                        services={vendorServices}
+                        meta={meta}
+                        fy={effectiveFy}
+                        refreshKey={ledgerRefresh}
                       />
                     )}
                       </>

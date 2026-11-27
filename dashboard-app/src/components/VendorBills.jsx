@@ -17,9 +17,9 @@ import { statusBadge } from './Invoices.jsx';
    NOT money out, so it never lands in the paid totals, on the
    server or here. Verified against the live page: all-years gives
    exactly 23 payees and NPR 2,550,462.50. */
-const MONEY_OUT_KINDS = ['paid_rent', 'paid_utility', 'paid_salary', 'paid_supplier'];
-const RPM_UTILITY_LABEL = 'Utility Payment — 9851073311';
-const RPM_NAME = 'Real Property Management Services Pvt. Ltd.';
+export const MONEY_OUT_KINDS = ['paid_rent', 'paid_utility', 'paid_salary', 'paid_supplier'];
+export const RPM_UTILITY_LABEL = 'Utility Payment — 9851073311';
+export const RPM_NAME = 'Real Property Management Services Pvt. Ltd.';
 
 export function isMoneyOut(inv) {
   return ((inv.kind === 'paid_babal' || inv.kind === 'paid_receipt') && inv.client_name === 'Babal.Host') ||
