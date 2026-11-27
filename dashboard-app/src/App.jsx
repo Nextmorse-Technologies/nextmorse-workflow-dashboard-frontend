@@ -19,6 +19,7 @@ import BillingRules from './components/BillingRules.jsx';
 import VendorBills from './components/VendorBills.jsx';
 import VendorServices from './components/VendorServices.jsx';
 import RentUtilities from './components/RentUtilities.jsx';
+import Salary from './components/Salary.jsx';
 import MenuPicker from './components/MenuPicker.jsx';
 
 const TABS = [
@@ -33,6 +34,7 @@ const TABS = [
   { key: 'rules', label: 'Billing rules' },
   { key: 'billing', label: 'Billing' },
   { key: 'rent-utilities', label: 'Rent and utilities' },
+  { key: 'salary', label: 'Salary' },
 ];
 
 function Header({ signedIn, onReload, onSignOut }) {
@@ -162,8 +164,8 @@ export default function App() {
      sits at the right end of the tab bar, after Billing, on every
      page, and every tab follows it — the Tax, Bank, Invoices,
      Receipts, Petty cash, Vendor bills, Vendor services, Billing
-     rules, Billing forms and Rent and utilities tabs all filter to
-     the picked year (all years when 'all'). */
+     rules, Billing forms, Rent and utilities and Salary tabs all
+     filter to the picked year (all years when 'all'). */
   const currentFy = (() => {
     if (meta && meta.current_fiscal_year) return meta.current_fiscal_year;
     const p = parseBs(meta && meta.today && meta.today.bs);
@@ -381,6 +383,7 @@ export default function App() {
     if (key === 'vendor') return; /* the tab loads its own lists */
     if (key === 'vendor-services') return; /* the list loads at sign-in */
     if (key === 'rent-utilities') return; /* the tab loads its own list */
+    if (key === 'salary') return; /* the tab loads its own list */
     if (key === 'rules') return; /* the tab loads its own list */
     if (!sections[key]) loadSection(key);
   }
@@ -528,6 +531,13 @@ export default function App() {
                         api={api}
                         services={vendorServices}
                         meta={meta}
+                        fy={effectiveFy}
+                        refreshKey={ledgerRefresh}
+                      />
+                    )}
+                    {activeTab === 'salary' && (
+                      <Salary
+                        api={api}
                         fy={effectiveFy}
                         refreshKey={ledgerRefresh}
                       />
