@@ -472,7 +472,7 @@ export default function App() {
                       <>
                     {activeTab === 'overview' && <Overview data={sections.overview} api={api} fy={effectiveFy} refreshKey={ledgerRefresh} />}
                     {activeTab === 'tax' && <Tax data={sections.tax} fy={effectiveFy} api={api} />}
-                    {activeTab === 'bank' && <Bank data={sections.bank} fy={effectiveFy} />}
+                    {activeTab === 'bank' && <Bank data={sections.bank} fy={effectiveFy} api={api} onImported={() => loadSection('bank')} />}
                     {activeTab === 'invoices' && (
                       <Invoices
                         api={api}
