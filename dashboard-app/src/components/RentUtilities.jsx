@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import { friendlyError, money } from '../api.js';
+import { friendlyError, money as moneyEn } from '../api.js';
+import { useLocale } from '../i18n.js';
 import { BS_MONTHS, dateLabel, fyOfBs, fyString, parseBs } from '../dates.js';
 import { SortHeader, useTableSort } from '../sort.js';
-import { tdsAmountOf, tdsLabel } from './VendorServices.jsx';
+import { CYCLE_LABELS, tdsAmountOf } from './VendorServices.jsx';
 import { RPM_NAME, RPM_UTILITY_LABEL } from './VendorBills.jsx';
 
 /* Rent and utilities — the office premises and what they cost.
@@ -90,10 +91,10 @@ export function rentTds(service, elapsedMonths) {
   return {
     rate: service.tds_rate,
     payee: service.tds_payee,
-    monthly: money(monthly),
-    annual: money(annual),
-    accrued: elapsed === null ? null : money(Math.round(monthly * elapsed * 100) / 100),
-    remaining: elapsed === null ? null : money(Math.round((annual - monthly * elapsed) * 100) / 100),
+    monthly: moneyEn(monthly),
+    annual: moneyEn(annual),
+    accrued: elapsed === null ? null : moneyEn(Math.round(monthly * elapsed * 100) / 100),
+    remaining: elapsed === null ? null : moneyEn(Math.round((annual - monthly * elapsed) * 100) / 100),
   };
 }
 
@@ -116,6 +117,7 @@ export function rentUtilityBills(invoices, fy) {
 }
 
 export default function RentUtilities({ api, services, meta, fy, refreshKey, initialInvoices, initialTodayBs }) {
+  const { t, money, digits } = useLocale();
   const effectiveFy = fy || 'all';
   const [invoices, setInvoices] = useState(initialInvoices || null);
   const [loading, setLoading] = useState(!initialInvoices);
@@ -157,6 +159,21 @@ export default function RentUtilities({ api, services, meta, fy, refreshKey, ini
   const rent = rentServiceOf(services);
   const utilities = utilityServicesOf(services);
   const tds = rent ? rentTds(rent, calc.elapsed) : null;
+  /* The rent-TDS money, localized: rentTds() formats its figures
+     in English for the tests, so the raw monthly amount is
+     recomputed here for the locale-aware money(). */
+  const monthlyRaw = rent ? tdsAmountOf(rent) : null;
+  const annualRaw = monthlyRaw === null ? null : Math.round(monthlyRaw * 12 * 100) / 100;
+  const accruedRaw = monthlyRaw === null || calc.elapsed === null ? null : Math.round(monthlyRaw * calc.elapsed * 100) / 100;
+  const remainingRaw = monthlyRaw === null || calc.elapsed === null || annualRaw === null ? null : Math.round((annualRaw - monthlyRaw * calc.elapsed) * 100) / 100;
+  const tdsSentence = rent && monthlyRaw !== null && tds
+    ? t('{rate}% of {amount} = {tds} — payable to {payee}', {
+      rate: digits(tds.rate),
+      amount: money(rent.amount_npr),
+      tds: money(monthlyRaw),
+      payee: tds.payee,
+    })
+    : null;
   const bills = rentUtilityBills(invoices, effectiveFy);
   const calcFy = calc.fyStart ? fyString(calc.fyStart) : effectiveFy;
   /* One sort state per table; each starts in its original order
@@ -184,37 +201,34 @@ export default function RentUtilities({ api, services, meta, fy, refreshKey, ini
 
   return (
     <div>
-      <h4>Rent and utilities</h4>
+      <h4>{t('Rent and utilities')}</h4>
       <p className="text-muted">
-        The office rent and utilities, and the rent tax owed on them.
+        {t('The office rent and utilities, and the rent tax owed on them.')}
       </p>
       <p className="text-muted small">
-        Showing {effectiveFy === 'all' ? calcFy + ' (current year)' : effectiveFy}.
+        {effectiveFy === 'all' ? t('Showing {fy} (current year)', { fy: digits(calcFy) }) : t('Showing {fy}.', { fy: digits(effectiveFy) })}
       </p>
 
-      <h5 className="h6 mt-3">Rent</h5>
+      <h5 className="h6 mt-3">{t('Rent')}</h5>
       {!rent ? (
-        <p className="text-muted">No rent service saved yet — add one on the Vendor services tab.</p>
+        <p className="text-muted">{t('No rent service saved yet — add one on the Vendor services tab.')}</p>
       ) : (
         <div className="card">
           <div className="card-body">
             <h6 className="card-title">{rent.service}</h6>
             <p className="card-text mb-1">
-              {rent.supplier} &middot; {rent.cycle === 'monthly' ? 'Monthly' : rent.cycle} &middot;{' '}
-              {rent.amount_npr === null || rent.amount_npr === undefined ? '— varies' : money(rent.amount_npr)}
-              {' '}a month &middot; {rent.vat_included ? '13% VAT included' : 'No VAT'}
+              {rent.supplier} &middot; {t(CYCLE_LABELS[rent.cycle] || rent.cycle)} &middot;{' '}
+              {rent.amount_npr === null || rent.amount_npr === undefined ? t('— varies') : money(rent.amount_npr)}
+              {' '}{t('a month')} &middot; {rent.vat_included ? t('13% VAT included') : t('No VAT')}
             </p>
             <p className="card-text mb-1">
-              Landlord: Pramod Kumar Rimal (Ward 2). Term: 1 Shrawan 2083 – end Ashar 2085.
-              Rent is paid to Real Property Management Services Pvt. Ltd.
+              {t('Landlord: Pramod Kumar Rimal (Ward 2). Term: 1 Shrawan 2083 – end Ashar 2085. Rent is paid to Real Property Management Services Pvt. Ltd.')}
             </p>
-            {tdsLabel(rent) && (
-              <p className="card-text mb-1">TDS: {tdsLabel(rent)} a month.</p>
+            {tdsSentence && (
+              <p className="card-text mb-1">{t('TDS: {label} a month.', { label: tdsSentence })}</p>
             )}
             <p className="card-text mb-0 text-muted">
-              The 10% TDS is on the agreement rent of NPR 15,400 a month — not on what was
-              actually paid. The actual rent paid Jul–Nov 2026 was NPR 132,000
-              (NPR 24,000–28,800 a month), so the two numbers must never be confused.
+              {t('The 10% TDS is on the agreement rent of NPR 15,400 a month — not on what was actually paid. The actual rent paid Jul–Nov 2026 was NPR 132,000 (NPR 24,000–28,800 a month), so the two numbers must never be confused.')}
             </p>
           </div>
         </div>
@@ -222,60 +236,59 @@ export default function RentUtilities({ api, services, meta, fy, refreshKey, ini
 
       {rent && tds && (
         <>
-          <h5 className="h6 mt-4">Rent TDS — how much rent tax is owed</h5>
+          <h5 className="h6 mt-4">{t('Rent TDS — how much rent tax is owed')}</h5>
           <div className="card">
             <div className="card-body">
               <p className="card-text mb-1">
-                {tds.rate}% of {money(rent.amount_npr)} = {tds.monthly} a month — payable to {tds.payee}.
+                {tdsSentence} {t('a month')}.
               </p>
               <p className="card-text mb-1">
-                Paid once a year, not monthly — the {tds.monthly} a month accrues through the
-                year and is paid to {tds.payee} once a year.
+                {t('Paid once a year, not monthly — the {monthly} a month accrues through the year and is paid to {payee} once a year.', { monthly: money(monthlyRaw), payee: tds.payee })}
               </p>
               <p className="card-text mb-1">
-                Annual total (12 × {tds.monthly}): {tds.annual}
+                {t('Annual total (12 × {monthly}): {annual}', { monthly: money(monthlyRaw), annual: money(annualRaw) })}
               </p>
-              {tds.accrued !== null ? (
+              {accruedRaw !== null ? (
                 <>
                   <p className="card-text mb-1">
-                    Accrued so far — {accruedSpanLabel(calc.fyStart, calc.elapsed)} ({calc.elapsed} months): {tds.accrued}
+                    {t('Accrued so far — {span} ({months} months): {accrued}', { span: accruedSpanLabel(calc.fyStart, calc.elapsed), months: digits(calc.elapsed), accrued: money(accruedRaw) })}
                   </p>
                   <p className="card-text mb-1">
-                    Still to come — {remainingSpanLabel(calc.fyStart, calc.elapsed) || 'nothing remaining'} ({12 - calc.elapsed} months): {tds.remaining}
+                    {t('Still to come — {span} ({months} months): {remaining}', { span: remainingSpanLabel(calc.fyStart, calc.elapsed) || t('nothing remaining'), months: digits(12 - calc.elapsed), remaining: money(remainingRaw) })}
                   </p>
                 </>
               ) : (
                 <p className="card-text mb-1">
-                  Today&apos;s date was not available, so the accrued split is not shown.
+                  {t('Today\'s date was not available, so the accrued split is not shown.')}
                 </p>
               )}
               <p className="card-text mb-0 text-muted">
-                Marked on the record only — it is not counted into TDS payable (NPR 3,749.42).
+                {t('Marked on the record only — it is not counted into TDS payable (NPR 3,749.42).')}
               </p>
             </div>
           </div>
         </>
       )}
 
-      <h5 className="h6 mt-4">Utilities</h5>
+      <h5 className="h6 mt-4">{t('Utilities')}</h5>
       {utilities.length === 0 ? (
-        <p className="text-muted">No utility services saved yet — add them on the Vendor services tab.</p>
+        <p className="text-muted">{t('No utility services saved yet — add them on the Vendor services tab.')}</p>
       ) : (
         <table className="table table-sm">
           <thead>
             <tr>
-              <SortHeader label="Service" sortKey="service" activeKey={utilitySort.sortKey} dir={utilitySort.sortDir} onSort={utilitySort.onSort} />
-              <SortHeader label="Cycle" sortKey="cycle" activeKey={utilitySort.sortKey} dir={utilitySort.sortDir} onSort={utilitySort.onSort} />
-              <SortHeader label="Amount" sortKey="amount" activeKey={utilitySort.sortKey} dir={utilitySort.sortDir} onSort={utilitySort.onSort} />
-              <SortHeader label="Notes" sortKey="notes" activeKey={utilitySort.sortKey} dir={utilitySort.sortDir} onSort={utilitySort.onSort} />
+              <SortHeader label={t('Service')} sortKey="service" activeKey={utilitySort.sortKey} dir={utilitySort.sortDir} onSort={utilitySort.onSort} />
+              <SortHeader label={t('Cycle')} sortKey="cycle" activeKey={utilitySort.sortKey} dir={utilitySort.sortDir} onSort={utilitySort.onSort} />
+              <SortHeader label={t('Amount')} sortKey="amount" activeKey={utilitySort.sortKey} dir={utilitySort.sortDir} onSort={utilitySort.onSort} />
+              <SortHeader label={t('Notes')} sortKey="notes" activeKey={utilitySort.sortKey} dir={utilitySort.sortDir} onSort={utilitySort.onSort} />
             </tr>
           </thead>
           <tbody>
             {sortedUtilities.map((s) => (
               <tr key={s.id}>
                 <td>{s.service}</td>
-                <td>{s.cycle === 'monthly' ? 'Monthly' : (s.cycle || '—')}</td>
-                <td>{(s.amount_npr === null || s.amount_npr === undefined) ? '— varies' : money(s.amount_npr)}</td>
+                <td>{t(CYCLE_LABELS[s.cycle] || s.cycle || '—')}</td>
+                <td>{(s.amount_npr === null || s.amount_npr === undefined) ? t('— varies') : money(s.amount_npr)}</td>
                 <td>{s.notes || '—'}</td>
               </tr>
             ))}
@@ -283,26 +296,26 @@ export default function RentUtilities({ api, services, meta, fy, refreshKey, ini
         </table>
       )}
 
-      <h5 className="h6 mt-4">Rent and utility bills paid</h5>
+      <h5 className="h6 mt-4">{t('Rent and utility bills paid')}</h5>
       <p className="text-muted small">
-        Showing {effectiveFy === 'all' ? 'all years' : effectiveFy}.
+        {t('Showing {fy}.', { fy: effectiveFy === 'all' ? t('all years') : digits(effectiveFy) })}
       </p>
-      {loading && <p className="text-muted">Loading rent and utility bills…</p>}
+      {loading && <p className="text-muted">{t('Loading rent and utility bills…')}</p>}
       {loadError && <div className="alert alert-danger" role="alert">{loadError}</div>}
       {invoices && (
         <>
-          <p className="text-muted">Total paid: {money(bills.total)}</p>
+          <p className="text-muted">{t('Total paid: {amount}', { amount: money(bills.total) })}</p>
           {bills.rows.length === 0 ? (
-            <p className="text-muted">No rent or utility bills paid{effectiveFy === 'all' ? '' : ' in ' + effectiveFy}.</p>
+            <p className="text-muted">{effectiveFy === 'all' ? t('No rent or utility bills paid.') : t('No rent or utility bills paid in {fy}.', { fy: digits(effectiveFy) })}</p>
           ) : (
             <div className="table-responsive">
               <table className="table table-striped table-sm bg-white">
                 <thead>
                   <tr>
-                    <SortHeader label="Paid" sortKey="paid" activeKey={billSort.sortKey} dir={billSort.sortDir} onSort={billSort.onSort} />
-                    <SortHeader label="Service" sortKey="service" activeKey={billSort.sortKey} dir={billSort.sortDir} onSort={billSort.onSort} />
-                    <SortHeader label="Type" sortKey="type" activeKey={billSort.sortKey} dir={billSort.sortDir} onSort={billSort.onSort} />
-                    <SortHeader label="Amount" sortKey="amount" activeKey={billSort.sortKey} dir={billSort.sortDir} onSort={billSort.onSort} className="text-right" />
+                    <SortHeader label={t('Payment date')} sortKey="paid" activeKey={billSort.sortKey} dir={billSort.sortDir} onSort={billSort.onSort} />
+                    <SortHeader label={t('Service')} sortKey="service" activeKey={billSort.sortKey} dir={billSort.sortDir} onSort={billSort.onSort} />
+                    <SortHeader label={t('Type')} sortKey="type" activeKey={billSort.sortKey} dir={billSort.sortDir} onSort={billSort.onSort} />
+                    <SortHeader label={t('Amount')} sortKey="amount" activeKey={billSort.sortKey} dir={billSort.sortDir} onSort={billSort.onSort} className="text-right" />
                   </tr>
                 </thead>
                 <tbody>
@@ -310,7 +323,7 @@ export default function RentUtilities({ api, services, meta, fy, refreshKey, ini
                     <tr key={b.id}>
                       <td>{b.paid_date_ad || b.paid_date_bs ? dateLabel(b.paid_date_ad, b.paid_date_bs) : dateLabel(b.date_ad, b.date_bs)}</td>
                       <td>{b.service || '—'}</td>
-                      <td>{b.kind === 'paid_rent' ? 'Rent' : 'Utility'}</td>
+                      <td>{b.kind === 'paid_rent' ? t('Rent') : t('Utility')}</td>
                       <td className="text-right">{money(b.amount_npr)}</td>
                     </tr>
                   ))}

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { friendlyError, money } from '../api.js';
+import { friendlyError } from '../api.js';
+import { useLocale } from '../i18n.js';
 import { dateLabel } from '../dates.js';
 import { SortHeader, useTableSort } from '../sort.js';
 import { statusBadge } from './Invoices.jsx';
@@ -69,6 +70,7 @@ export function groupPaidBills(invoices, fy) {
    sorts only the bills actually shown, after the fiscal-year
    filter. It starts newest first, as before. */
 function PaidGroup({ group }) {
+  const { t, money } = useLocale();
   const sort = useTableSort('paid', 'desc');
   const sorted = sort.apply(group.bills, (b, key) => {
     switch (key) {
@@ -85,10 +87,10 @@ function PaidGroup({ group }) {
         <table className="table table-striped table-sm bg-white">
           <thead>
             <tr>
-              <SortHeader label="Invoice no." sortKey="number" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
-              <SortHeader label="Service" sortKey="service" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
-              <SortHeader label="Amount" sortKey="amount" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} className="text-right" />
-              <SortHeader label="Paid" sortKey="paid" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
+              <SortHeader label={t('Invoice no.')} sortKey="number" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
+              <SortHeader label={t('Service')} sortKey="service" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
+              <SortHeader label={t('Amount')} sortKey="amount" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} className="text-right" />
+              <SortHeader label={t('Payment date')} sortKey="paid" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
             </tr>
           </thead>
           <tbody>
@@ -108,6 +110,7 @@ function PaidGroup({ group }) {
 }
 
 export default function VendorBills({ api, refreshKey, fy, initialInvoices }) {
+  const { t, money, digits } = useLocale();
   const effectiveFy = fy || 'all';
   const [invoices, setInvoices] = useState(initialInvoices || null);
   const [loading, setLoading] = useState(!initialInvoices);
@@ -176,27 +179,27 @@ export default function VendorBills({ api, refreshKey, fy, initialInvoices }) {
 
   return (
     <>
-      <h3 className="h5">Vendor Bills</h3>
-      <p className="mb-2 text-muted">What suppliers have been paid, and what is still owed to them.</p>
-      <p className="mb-2 text-muted small">Showing {effectiveFy === 'all' ? 'all years' : effectiveFy}.</p>
-      {loading && <p className="text-muted">Loading vendor bills…</p>}
+      <h3 className="h5">{t('Vendor Bills')}</h3>
+      <p className="mb-2 text-muted">{t('What suppliers have been paid, and what is still owed to them.')}</p>
+      <p className="mb-2 text-muted small">{t('Showing {fy}.', { fy: effectiveFy === 'all' ? t('all years') : digits(effectiveFy) })}</p>
+      {loading && <p className="text-muted">{t('Loading vendor bills…')}</p>}
       {loadError && <div className="alert alert-danger" role="alert">{loadError}</div>}
       {invoices && (
         <>
-          <h4 className="h6 mt-3">Open vendor bills</h4>
+          <h4 className="h6 mt-3">{t('Open vendor bills')}</h4>
           {openBills.length === 0 ? (
-            <p className="text-muted">No open vendor bills.</p>
+            <p className="text-muted">{t('No open vendor bills.')}</p>
           ) : (
             <div className="table-responsive">
               <table className="table table-striped table-sm bg-white">
                 <thead>
                   <tr>
-                    <SortHeader label="Invoice no." sortKey="number" activeKey={openSort.sortKey} dir={openSort.sortDir} onSort={openSort.onSort} />
-                    <SortHeader label="Supplier" sortKey="supplier" activeKey={openSort.sortKey} dir={openSort.sortDir} onSort={openSort.onSort} />
-                    <SortHeader label="Service" sortKey="service" activeKey={openSort.sortKey} dir={openSort.sortDir} onSort={openSort.onSort} />
-                    <SortHeader label="Amount" sortKey="amount" activeKey={openSort.sortKey} dir={openSort.sortDir} onSort={openSort.onSort} className="text-right" />
-                    <SortHeader label="Status" sortKey="status" activeKey={openSort.sortKey} dir={openSort.sortDir} onSort={openSort.onSort} />
-                    <SortHeader label="Issued" sortKey="issued" activeKey={openSort.sortKey} dir={openSort.sortDir} onSort={openSort.onSort} />
+                    <SortHeader label={t('Invoice no.')} sortKey="number" activeKey={openSort.sortKey} dir={openSort.sortDir} onSort={openSort.onSort} />
+                    <SortHeader label={t('Supplier')} sortKey="supplier" activeKey={openSort.sortKey} dir={openSort.sortDir} onSort={openSort.onSort} />
+                    <SortHeader label={t('Service')} sortKey="service" activeKey={openSort.sortKey} dir={openSort.sortDir} onSort={openSort.onSort} />
+                    <SortHeader label={t('Amount')} sortKey="amount" activeKey={openSort.sortKey} dir={openSort.sortDir} onSort={openSort.onSort} className="text-right" />
+                    <SortHeader label={t('Status')} sortKey="status" activeKey={openSort.sortKey} dir={openSort.sortDir} onSort={openSort.onSort} />
+                    <SortHeader label={t('Issued')} sortKey="issued" activeKey={openSort.sortKey} dir={openSort.sortDir} onSort={openSort.onSort} />
                   </tr>
                 </thead>
                 <tbody>
@@ -206,7 +209,7 @@ export default function VendorBills({ api, refreshKey, fy, initialInvoices }) {
                       <td>{b.client_name}</td>
                       <td>{b.service}</td>
                       <td className="text-right">{money(b.amount_npr)}</td>
-                      <td><span className={'badge ' + statusBadge(b.status)}>{b.status}</span></td>
+                      <td><span className={'badge ' + statusBadge(b.status)}>{t(b.status)}</span></td>
                       <td>{dateLabel(b.date_ad, b.date_bs)}</td>
                     </tr>
                   ))}
@@ -214,34 +217,34 @@ export default function VendorBills({ api, refreshKey, fy, initialInvoices }) {
               </table>
             </div>
           )}
-          <h4 className="h6 mt-3">Paid vendor bills</h4>
+          <h4 className="h6 mt-3">{t('Paid vendor bills')}</h4>
           {paidGroups.length === 0 ? (
-            <p className="text-muted">No paid vendor bills{effectiveFy === 'all' ? '' : ' in ' + effectiveFy}.</p>
+            <p className="text-muted">{effectiveFy === 'all' ? t('No paid vendor bills.') : t('No paid vendor bills in {fy}.', { fy: digits(effectiveFy) })}</p>
           ) : (
             paidGroups.map((g) => (
               <PaidGroup key={g.name} group={g} />
             ))
           )}
-          <h4 className="h6 mt-3">Owed to vendors</h4>
+          <h4 className="h6 mt-3">{t('Owed to vendors')}</h4>
           <p className="text-muted">{money(owed)}</p>
-          <h4 className="h6 mt-3">Suppliers — paid totals</h4>
+          <h4 className="h6 mt-3">{t('Suppliers — paid totals')}</h4>
           {paidRows.length === 0 ? (
-            <p className="text-muted">No paid vendor bills in {effectiveFy === 'all' ? 'any year' : effectiveFy}.</p>
+            <p className="text-muted">{effectiveFy === 'all' ? t('No paid vendor bills in any year.') : t('No paid vendor bills in {fy}.', { fy: digits(effectiveFy) })}</p>
           ) : (
             <div className="table-responsive">
               <table className="table table-striped table-sm bg-white">
                 <thead>
                   <tr>
-                    <SortHeader label="Supplier" sortKey="supplier" activeKey={totalsSort.sortKey} dir={totalsSort.sortDir} onSort={totalsSort.onSort} />
-                    <SortHeader label="Payments" sortKey="payments" activeKey={totalsSort.sortKey} dir={totalsSort.sortDir} onSort={totalsSort.onSort} className="text-right" />
-                    <SortHeader label="Total paid" sortKey="total" activeKey={totalsSort.sortKey} dir={totalsSort.sortDir} onSort={totalsSort.onSort} className="text-right" />
+                    <SortHeader label={t('Supplier')} sortKey="supplier" activeKey={totalsSort.sortKey} dir={totalsSort.sortDir} onSort={totalsSort.onSort} />
+                    <SortHeader label={t('Payments')} sortKey="payments" activeKey={totalsSort.sortKey} dir={totalsSort.sortDir} onSort={totalsSort.onSort} className="text-right" />
+                    <SortHeader label={t('Total paid')} sortKey="total" activeKey={totalsSort.sortKey} dir={totalsSort.sortDir} onSort={totalsSort.onSort} className="text-right" />
                   </tr>
                 </thead>
                 <tbody>
                   {paidRows.map((s, i) => (
                     <tr key={i}>
                       <td>{s.name}</td>
-                      <td className="text-right">{s.count}</td>
+                      <td className="text-right">{digits(s.count)}</td>
                       <td className="text-right">{money(s.total)}</td>
                     </tr>
                   ))}

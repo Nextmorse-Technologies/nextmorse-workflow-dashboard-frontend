@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { fetchAllPages, friendlyError, money } from '../api.js';
+import { fetchAllPages, friendlyError } from '../api.js';
+import { useLocale } from '../i18n.js';
 import { dateLabel, fyOfBs } from '../dates.js';
 import { SortHeader, useTableSort } from '../sort.js';
 import { displayNumber, displayReceiptNumber, receiptNumberValue, sortInvoices } from './Invoices.jsx';
@@ -35,6 +36,7 @@ function receiptNumber(r) {
    sorts only the receipts actually shown, after the fiscal-year
    filter. The Print column has no sort; it is an action. */
 function ReceiptGroup({ group, items, onPrintReceipt }) {
+  const { t, money } = useLocale();
   const sort = useTableSort(null);
   const total = items.reduce((sum, r) => sum + (Number(r.amount_npr) || 0), 0);
   const sorted = sort.apply(items, (r, key) => {
@@ -49,17 +51,17 @@ function ReceiptGroup({ group, items, onPrintReceipt }) {
     <div className="card mb-4">
       <div className="card-body">
         <h4 className="card-title h6">
-          {group.heading} — Subtotal: {money(total)}
+          {t(group.heading)} — {t('Subtotal: {amount}', { amount: money(total) })}
         </h4>
         {items.length ? (
           <div className="table-responsive">
             <table className="table table-striped table-sm bg-white">
               <thead>
                 <tr>
-                  <SortHeader label="Receipt no." sortKey="number" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
-                  <SortHeader label={group.party} sortKey="party" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
-                  <SortHeader label={group.amount} sortKey="amount" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} className="text-right" />
-                  <SortHeader label="Payment date" sortKey="date" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
+                  <SortHeader label={t('Receipt no.')} sortKey="number" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
+                  <SortHeader label={t(group.party)} sortKey="party" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
+                  <SortHeader label={t(group.amount)} sortKey="amount" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} className="text-right" />
+                  <SortHeader label={t('Payment date')} sortKey="date" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
                   <th></th>
                 </tr>
               </thead>
@@ -77,10 +79,10 @@ function ReceiptGroup({ group, items, onPrintReceipt }) {
                           className="btn btn-sm btn-secondary"
                           onClick={() => onPrintReceipt(r.id)}
                         >
-                          {'Receipt ' + receiptNumber(r)}
+                          {t('Receipt {number}', { number: receiptNumber(r) })}
                         </button>
                       ) : (
-                        <span className="text-muted">{'Receipt ' + receiptNumber(r)}</span>
+                        <span className="text-muted">{t('Receipt {number}', { number: receiptNumber(r) })}</span>
                       )}
                     </td>
                   </tr>
@@ -89,7 +91,7 @@ function ReceiptGroup({ group, items, onPrintReceipt }) {
             </table>
           </div>
         ) : (
-          <p className="text-muted mb-0">No receipts in this fiscal year.</p>
+          <p className="text-muted mb-0">{t('No receipts in this fiscal year.')}</p>
         )}
       </div>
     </div>
@@ -114,6 +116,7 @@ export function paidWithoutReceiptRows(invoices, fy) {
    A row leaves this list the moment a receipt is recorded for it
    in the Billing tab. */
 function PaidWithoutReceipt({ items, onPrintInvoice }) {
+  const { t, money, digits } = useLocale();
   const sort = useTableSort('number', 'asc');
   const total = items.reduce((sum, inv) => sum + (Number(inv.amount_npr) || 0), 0);
   const sorted = sortInvoices(items, sort.sortKey, sort.sortDir);
@@ -121,20 +124,20 @@ function PaidWithoutReceipt({ items, onPrintInvoice }) {
     <div className="card mb-4">
       <div className="card-body">
         <h4 className="card-title h6">
-          Paid without a receipt ({items.length}) — Subtotal: {money(total)}
+          {t('Paid without a receipt ({n})', { n: digits(items.length) })} — {t('Subtotal: {amount}', { amount: money(total) })}
         </h4>
         <p className="text-muted small">
-          Paid invoices with no receipt linked. Record the receipt from the Billing tab to close each one.
+          {t('Paid invoices with no receipt linked. Record the receipt from the Billing tab to close each one.')}
         </p>
         {items.length ? (
           <div className="table-responsive">
             <table className="table table-striped table-sm bg-white">
               <thead>
                 <tr>
-                  <SortHeader label="Invoice" sortKey="number" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
-                  <SortHeader label="Client" sortKey="client" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
-                  <SortHeader label="Amount" sortKey="amount" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} className="text-right" />
-                  <SortHeader label="Paid" sortKey="paid" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
+                  <SortHeader label={t('Invoice')} sortKey="number" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
+                  <SortHeader label={t('Client')} sortKey="client" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
+                  <SortHeader label={t('Amount')} sortKey="amount" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} className="text-right" />
+                  <SortHeader label={t('Payment date')} sortKey="paid" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
                   <th></th>
                 </tr>
               </thead>
@@ -147,9 +150,9 @@ function PaidWithoutReceipt({ items, onPrintInvoice }) {
                     <td>{dateLabel(inv.paid_date_ad || inv.date_ad, inv.paid_date_bs || inv.date_bs)}</td>
                     <td>
                       {onPrintInvoice ? (
-                        <button type="button" className="btn btn-sm btn-secondary" onClick={() => onPrintInvoice(inv.id)}>Print</button>
+                        <button type="button" className="btn btn-sm btn-secondary" onClick={() => onPrintInvoice(inv.id)}>{t('Print')}</button>
                       ) : (
-                        <span className="text-muted">Print</span>
+                        <span className="text-muted">{t('Print')}</span>
                       )}
                     </td>
                   </tr>
@@ -158,7 +161,7 @@ function PaidWithoutReceipt({ items, onPrintInvoice }) {
             </table>
           </div>
         ) : (
-          <p className="text-muted mb-0">No paid invoices without a receipt in this fiscal year.</p>
+          <p className="text-muted mb-0">{t('No paid invoices without a receipt in this fiscal year.')}</p>
         )}
       </div>
     </div>
@@ -166,6 +169,7 @@ function PaidWithoutReceipt({ items, onPrintInvoice }) {
 }
 
 export default function Receipts({ api, data, fy, refreshKey, onPrintReceipt, onPrintInvoice }) {
+  const { t, digits } = useLocale();
   /* The invoice list, for the paid-without-a-receipt card — the
      receipts alone cannot show it (a receipt only names the
      invoices it covers). Same fetch-every-page pattern as the
@@ -208,11 +212,11 @@ export default function Receipts({ api, data, fy, refreshKey, onPrintReceipt, on
 
   return (
     <>
-      <h3 className="h5">Receipts</h3>
+      <h3 className="h5">{t('Receipts')}</h3>
       <p className="mb-2 text-muted">
         {effectiveFy === 'all'
-          ? 'Showing all years.'
-          : 'Showing ' + effectiveFy + ' — money and government figures follow this fiscal year.'}
+          ? t('Showing all years.')
+          : t('Showing {fy} — money and government figures follow this fiscal year.', { fy: digits(effectiveFy) })}
       </p>
       {GROUPS.map((g) => (
         <ReceiptGroup key={g.key} group={g} items={grouped[g.key]} onPrintReceipt={onPrintReceipt} />

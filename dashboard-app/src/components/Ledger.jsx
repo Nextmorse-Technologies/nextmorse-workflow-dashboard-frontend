@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useState } from 'react';
-import { friendlyError, money } from '../api.js';
+import { friendlyError } from '../api.js';
+import { useLocale } from '../i18n.js';
 import { dateLabel } from '../dates.js';
 import { SortHeader, useTableSort } from '../sort.js';
 import { bankForFy } from './Bank.jsx';
@@ -179,6 +180,7 @@ export function plRowValue(r, key) {
    Pass showProfit={false} for the 'No fiscal year' group, which
    has no profit figure. */
 function PlDetail({ group, showProfit = true }) {
+  const { t, money, digits } = useLocale();
   return (
     <div className="pl-detail text-left">
       {PL_BUCKETS.map((b) => {
@@ -186,18 +188,18 @@ function PlDetail({ group, showProfit = true }) {
         return (
           <div key={b.key} className="mb-3">
             <p className="mb-1">
-              <strong>{b.title}</strong> — {money(bucket.total)} ({bucket.items.length} {bucket.items.length === 1 ? 'item' : 'items'})
-              {' '}<span className="text-muted small">{b.hint}</span>
+              <strong>{t(b.title)}</strong> — {money(bucket.total)} ({t(bucket.items.length === 1 ? '{n} item' : '{n} items', { n: digits(bucket.items.length) })})
+              {' '}<span className="text-muted small">{t(b.hint)}</span>
             </p>
             {bucket.items.length ? (
               <table className="table table-sm mb-1 bg-white">
                 <thead>
                   <tr>
                     <th>ID</th>
-                    <th>Client / Supplier</th>
-                    <th>Service</th>
-                    <th>Date</th>
-                    <th className="text-right">{b.key === 'revenue' ? 'Revenue' : 'Amount'}</th>
+                    <th>{t('Client / Supplier')}</th>
+                    <th>{t('Service')}</th>
+                    <th>{t('Date')}</th>
+                    <th className="text-right">{b.key === 'revenue' ? t('Revenue') : t('Amount')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -213,32 +215,32 @@ function PlDetail({ group, showProfit = true }) {
                 </tbody>
                 <tfoot>
                   <tr>
-                    <td colSpan={4}><strong>Subtotal</strong></td>
+                    <td colSpan={4}><strong>{t('Subtotal')}</strong></td>
                     <td className="text-right"><strong>{money(bucket.total)}</strong></td>
                   </tr>
                 </tfoot>
               </table>
             ) : (
-              <p className="text-muted small mb-1">No items in this year — 0.00.</p>
+              <p className="text-muted small mb-1">{t('No items in this year — 0.00.')}</p>
             )}
           </div>
         );
       })}
       <div className="mb-1">
         <p className="mb-1">
-          <strong>Not counted</strong> — {money(group.excluded.total)} ({group.excluded.items.length} {group.excluded.items.length === 1 ? 'item' : 'items'})
-          {' '}<span className="text-muted small">Rows in this year counted in neither revenue nor expenses.</span>
+          <strong>{t('Not counted')}</strong> — {money(group.excluded.total)} ({t(group.excluded.items.length === 1 ? '{n} item' : '{n} items', { n: digits(group.excluded.items.length) })})
+          {' '}<span className="text-muted small">{t('Rows in this year counted in neither revenue nor expenses.')}</span>
         </p>
         {group.excluded.items.length ? (
           <table className="table table-sm mb-1 bg-white">
             <thead>
               <tr>
                 <th>ID</th>
-                <th>Client / Supplier</th>
-                <th>Service</th>
-                <th>Date</th>
-                <th className="text-right">Amount</th>
-                <th>Reason</th>
+                <th>{t('Client / Supplier')}</th>
+                <th>{t('Service')}</th>
+                <th>{t('Date')}</th>
+                <th className="text-right">{t('Amount')}</th>
+                <th>{t('Reason')}</th>
               </tr>
             </thead>
             <tbody>
@@ -249,25 +251,25 @@ function PlDetail({ group, showProfit = true }) {
                   <td>{it.service}</td>
                   <td>{dateLabel(it.date_ad, it.date_bs)}</td>
                   <td className="text-right">{money(it.amount)}</td>
-                  <td>{it.reason}</td>
+                  <td>{t(it.reason)}</td>
                 </tr>
               ))}
             </tbody>
             <tfoot>
               <tr>
-                <td colSpan={4}><strong>Subtotal (not counted)</strong></td>
+                <td colSpan={4}><strong>{t('Subtotal (not counted)')}</strong></td>
                 <td className="text-right"><strong>{money(group.excluded.total)}</strong></td>
                 <td></td>
               </tr>
             </tfoot>
           </table>
         ) : (
-          <p className="text-muted small mb-1">Nothing excluded — every row in this year is counted.</p>
+          <p className="text-muted small mb-1">{t('Nothing excluded — every row in this year is counted.')}</p>
         )}
       </div>
       {showProfit && (
         <p className="text-muted small mb-0">
-          Net profit = Revenue {money(group.revenue.total)} − Total expenses {money(group.expenses)} = {money(group.profit)}.
+          {t('Net profit = Revenue {rev} − Total expenses {exp} = {profit}.', { rev: money(group.revenue.total), exp: money(group.expenses), profit: money(group.profit) })}
         </p>
       )}
     </div>
@@ -275,6 +277,7 @@ function PlDetail({ group, showProfit = true }) {
 }
 
 export default function Ledger({ api, fy, refreshKey, initialTrial, initialAccounts, initialBalances, initialBank, initialInvoices, initialPlExpanded }) {
+  const { t, money, digits } = useLocale();
   const [trial, setTrial] = useState(initialTrial || null);
   const [accounts, setAccounts] = useState(initialAccounts || null);
   const [balances, setBalances] = useState(initialBalances || null);
@@ -418,32 +421,32 @@ export default function Ledger({ api, fy, refreshKey, initialTrial, initialAccou
 
   return (
     <>
-      <h3 className="h5">Ledger</h3>
-      <p className="mb-2 text-muted">Double-entry, integer paisa, Dr = Cr — NFRS.</p>
+      <h3 className="h5">{t('Ledger')}</h3>
+      <p className="mb-2 text-muted">{t('Double-entry, integer paisa, Dr = Cr — NFRS.')}</p>
       <p className="mb-2 text-muted">
         {effectiveFy === 'all'
-          ? 'Showing all years.'
-          : 'Showing ' + effectiveFy + ' — money and government figures follow this fiscal year.'}
+          ? t('Showing all years.')
+          : t('Showing {fy} — money and government figures follow this fiscal year.', { fy: digits(effectiveFy) })}
       </p>
-      {loading && <p className="text-muted">Loading ledger…</p>}
+      {loading && <p className="text-muted">{t('Loading ledger…')}</p>}
       {loadError && <div className="alert alert-danger" role="alert">{loadError}</div>}
       {trial && (
         <>
           <h4 className="h6 mt-3">
-            Trial balance{' '}
+            {t('Trial balance')}{' '}
             <span className={'badge ' + (trial.balanced ? 'badge-success' : 'badge-danger')}>
-              {trial.balanced ? 'Balanced' : 'NOT balanced'}
+              {trial.balanced ? t('Balanced') : t('NOT balanced')}
             </span>
           </h4>
           <div className="table-responsive">
             <table className="table table-striped table-sm bg-white">
               <thead>
                 <tr>
-                  <SortHeader label="Code" sortKey="code" activeKey={trialSort.sortKey} dir={trialSort.sortDir} onSort={trialSort.onSort} />
-                  <SortHeader label="Account" sortKey="account" activeKey={trialSort.sortKey} dir={trialSort.sortDir} onSort={trialSort.onSort} />
-                  <SortHeader label="Debit" sortKey="debit" activeKey={trialSort.sortKey} dir={trialSort.sortDir} onSort={trialSort.onSort} className="text-right" />
-                  <SortHeader label="Credit" sortKey="credit" activeKey={trialSort.sortKey} dir={trialSort.sortDir} onSort={trialSort.onSort} className="text-right" />
-                  <SortHeader label="Net" sortKey="net" activeKey={trialSort.sortKey} dir={trialSort.sortDir} onSort={trialSort.onSort} className="text-right" />
+                  <SortHeader label={t('Code')} sortKey="code" activeKey={trialSort.sortKey} dir={trialSort.sortDir} onSort={trialSort.onSort} />
+                  <SortHeader label={t('Account')} sortKey="account" activeKey={trialSort.sortKey} dir={trialSort.sortDir} onSort={trialSort.onSort} />
+                  <SortHeader label={t('Debit')} sortKey="debit" activeKey={trialSort.sortKey} dir={trialSort.sortDir} onSort={trialSort.onSort} className="text-right" />
+                  <SortHeader label={t('Credit')} sortKey="credit" activeKey={trialSort.sortKey} dir={trialSort.sortDir} onSort={trialSort.onSort} className="text-right" />
+                  <SortHeader label={t('Net')} sortKey="net" activeKey={trialSort.sortKey} dir={trialSort.sortDir} onSort={trialSort.onSort} className="text-right" />
                 </tr>
               </thead>
               <tbody>
@@ -458,7 +461,7 @@ export default function Ledger({ api, fy, refreshKey, initialTrial, initialAccou
                 ))}
                 <tr>
                   <td></td>
-                  <td><strong>Total</strong></td>
+                  <td><strong>{t('Total')}</strong></td>
                   <td className="text-right"><strong>{money(trial.total_debit)}</strong></td>
                   <td className="text-right"><strong>{money(trial.total_credit)}</strong></td>
                   <td></td>
@@ -470,15 +473,15 @@ export default function Ledger({ api, fy, refreshKey, initialTrial, initialAccou
       )}
       {accounts && balances && (
         <>
-          <h4 className="h6 mt-3">Chart of accounts</h4>
+          <h4 className="h6 mt-3">{t('Chart of accounts')}</h4>
           <div className="table-responsive">
             <table className="table table-striped table-sm bg-white">
               <thead>
                 <tr>
-                  <SortHeader label="Code" sortKey="code" activeKey={chartSort.sortKey} dir={chartSort.sortDir} onSort={chartSort.onSort} />
-                  <SortHeader label="Account" sortKey="account" activeKey={chartSort.sortKey} dir={chartSort.sortDir} onSort={chartSort.onSort} />
-                  <SortHeader label="Type" sortKey="type" activeKey={chartSort.sortKey} dir={chartSort.sortDir} onSort={chartSort.onSort} />
-                  <SortHeader label="Balance" sortKey="balance" activeKey={chartSort.sortKey} dir={chartSort.sortDir} onSort={chartSort.onSort} className="text-right" />
+                  <SortHeader label={t('Code')} sortKey="code" activeKey={chartSort.sortKey} dir={chartSort.sortDir} onSort={chartSort.onSort} />
+                  <SortHeader label={t('Account')} sortKey="account" activeKey={chartSort.sortKey} dir={chartSort.sortDir} onSort={chartSort.onSort} />
+                  <SortHeader label={t('Type')} sortKey="type" activeKey={chartSort.sortKey} dir={chartSort.sortDir} onSort={chartSort.onSort} />
+                  <SortHeader label={t('Balance')} sortKey="balance" activeKey={chartSort.sortKey} dir={chartSort.sortDir} onSort={chartSort.onSort} className="text-right" />
                 </tr>
               </thead>
               <tbody>
@@ -497,31 +500,28 @@ export default function Ledger({ api, fy, refreshKey, initialTrial, initialAccou
       )}
       {bank && (
         <>
-          <h4 className="h6 mt-3">Bank: ledger vs register (all years)</h4>
+          <h4 className="h6 mt-3">{t('Bank: ledger vs register (all years)')}</h4>
           <p className="text-muted small">
-            The ledger bank is cumulative cash from all invoice records (2020–2026); the register holds only{' '}
-            {bank.entry_count !== undefined ? bank.entry_count : entries.length} entries from 2026, and most client
-            payments have no bank entry. The gap is documented, not forced equal. This comparison is all-years by
-            nature — the ledger side is cumulative, not one year's flow.
+            {t('The ledger bank is cumulative cash from all invoice records (2020–2026); the register holds only {n} entries from 2026, and most client payments have no bank entry. The gap is documented, not forced equal. This comparison is all-years by nature — the ledger side is cumulative, not one year\'s flow.', { n: digits(bank.entry_count !== undefined ? bank.entry_count : entries.length) })}
           </p>
           <div className="table-responsive">
             <table className="table table-striped table-sm bg-white">
               <tbody>
-                <tr><td>Ledger bank</td><td className="text-right">{money(bank.ledger_bank)}</td></tr>
-                <tr><td>Bank register</td><td className="text-right">{money(bank.balance)}</td></tr>
-                <tr><td>Deposits on record</td><td className="text-right">{money(bank.deposits)}</td></tr>
-                <tr><td>Withdrawals on record</td><td className="text-right">{money(bank.withdrawals)}</td></tr>
-                <tr><td><strong>Gap</strong></td><td className="text-right"><strong>{money(bank.gap_ledger_minus_register)}</strong></td></tr>
+                <tr><td>{t('Ledger bank')}</td><td className="text-right">{money(bank.ledger_bank)}</td></tr>
+                <tr><td>{t('Bank register')}</td><td className="text-right">{money(bank.balance)}</td></tr>
+                <tr><td>{t('Deposits on record')}</td><td className="text-right">{money(bank.deposits)}</td></tr>
+                <tr><td>{t('Withdrawals on record')}</td><td className="text-right">{money(bank.withdrawals)}</td></tr>
+                <tr><td><strong>{t('Gap')}</strong></td><td className="text-right"><strong>{money(bank.gap_ledger_minus_register)}</strong></td></tr>
               </tbody>
             </table>
           </div>
-          <h4 className="h6 mt-3">Bank register</h4>
+          <h4 className="h6 mt-3">{t('Bank register')}</h4>
           <p className="text-muted small">
-            {bankShown.entries.length} entries &middot; Register balance{' '}
-            {effectiveFy === 'all' ? '' : 'at the end of ' + effectiveFy + ' '}:{' '}
+            {t('{n} entries', { n: digits(bankShown.entries.length) })} &middot; {t('Register balance')}{' '}
+            {effectiveFy === 'all' ? '' : t('at the end of {fy}', { fy: digits(effectiveFy) }) + ' '}:{' '}
             {money(bankShown.balance)}
             {effectiveFy !== 'all' && (
-              <> &middot; Deposits {money(bankShown.deposits)} &middot; Withdrawals {money(bankShown.withdrawals)}</>
+              <> &middot; {t('Deposits')} {money(bankShown.deposits)} &middot; {t('Withdrawals')} {money(bankShown.withdrawals)}</>
             )}
           </p>
           {bankShown.entries.length ? (
@@ -529,18 +529,18 @@ export default function Ledger({ api, fy, refreshKey, initialTrial, initialAccou
             <table className="table table-striped table-sm bg-white">
               <thead>
                 <tr>
-                  <SortHeader label="Date" sortKey="date" activeKey={bankSort.sortKey} dir={bankSort.sortDir} onSort={bankSort.onSort} />
-                  <SortHeader label="Direction" sortKey="direction" activeKey={bankSort.sortKey} dir={bankSort.sortDir} onSort={bankSort.onSort} />
-                  <SortHeader label="Amount" sortKey="amount" activeKey={bankSort.sortKey} dir={bankSort.sortDir} onSort={bankSort.onSort} className="text-right" />
-                  <SortHeader label="Reference" sortKey="reference" activeKey={bankSort.sortKey} dir={bankSort.sortDir} onSort={bankSort.onSort} />
-                  <SortHeader label="Client" sortKey="client" activeKey={bankSort.sortKey} dir={bankSort.sortDir} onSort={bankSort.onSort} />
+                  <SortHeader label={t('Date')} sortKey="date" activeKey={bankSort.sortKey} dir={bankSort.sortDir} onSort={bankSort.onSort} />
+                  <SortHeader label={t('Direction')} sortKey="direction" activeKey={bankSort.sortKey} dir={bankSort.sortDir} onSort={bankSort.onSort} />
+                  <SortHeader label={t('Amount')} sortKey="amount" activeKey={bankSort.sortKey} dir={bankSort.sortDir} onSort={bankSort.onSort} className="text-right" />
+                  <SortHeader label={t('Reference')} sortKey="reference" activeKey={bankSort.sortKey} dir={bankSort.sortDir} onSort={bankSort.onSort} />
+                  <SortHeader label={t('Client')} sortKey="client" activeKey={bankSort.sortKey} dir={bankSort.sortDir} onSort={bankSort.onSort} />
                 </tr>
               </thead>
               <tbody>
                 {sortedBankEntries.map((e, i) => (
                   <tr key={e.id || i}>
                     <td>{e.date}</td>
-                    <td>{e.direction}</td>
+                    <td>{t(e.direction)}</td>
                     <td className="text-right">{money(e.amount_npr)}</td>
                     <td>{e.reference || '—'}</td>
                     <td>{e.client === 'unknown' ? '—' : e.client}</td>
@@ -550,27 +550,27 @@ export default function Ledger({ api, fy, refreshKey, initialTrial, initialAccou
             </table>
           </div>
           ) : (
-            <p className="text-muted">No bank entries in this fiscal year.</p>
+            <p className="text-muted">{t('No bank entries in this fiscal year.')}</p>
           )}
         </>
       )}
       {invoices && (
         <>
-          <h4 className="h6 mt-3">Profit and Loss</h4>
+          <h4 className="h6 mt-3">{t('Profit and Loss')}</h4>
           {plShown.length ? (
             <div className="table-responsive">
               <table className="table table-striped table-sm bg-white">
                 <thead>
                   <tr>
-                    <SortHeader label="Fiscal year" sortKey="fy" activeKey={plSort.sortKey} dir={plSort.sortDir} onSort={plSort.onSort} />
-                    <SortHeader label="Revenue" sortKey="revenue" activeKey={plSort.sortKey} dir={plSort.sortDir} onSort={plSort.onSort} className="text-right" />
-                    <SortHeader label="Rent" sortKey="rent" activeKey={plSort.sortKey} dir={plSort.sortDir} onSort={plSort.onSort} className="text-right" />
-                    <SortHeader label="Salaries" sortKey="salaries" activeKey={plSort.sortKey} dir={plSort.sortDir} onSort={plSort.onSort} className="text-right" />
-                    <SortHeader label="Hosting & domains" sortKey="hosting" activeKey={plSort.sortKey} dir={plSort.sortDir} onSort={plSort.onSort} className="text-right" />
-                    <SortHeader label="Suppliers" sortKey="suppliers" activeKey={plSort.sortKey} dir={plSort.sortDir} onSort={plSort.onSort} className="text-right" />
-                    <SortHeader label="Utilities" sortKey="utilities" activeKey={plSort.sortKey} dir={plSort.sortDir} onSort={plSort.onSort} className="text-right" />
-                    <SortHeader label="Total expenses" sortKey="expenses" activeKey={plSort.sortKey} dir={plSort.sortDir} onSort={plSort.onSort} className="text-right" />
-                    <SortHeader label="Net profit" sortKey="profit" activeKey={plSort.sortKey} dir={plSort.sortDir} onSort={plSort.onSort} className="text-right" />
+                    <SortHeader label={t('Fiscal year')} sortKey="fy" activeKey={plSort.sortKey} dir={plSort.sortDir} onSort={plSort.onSort} />
+                    <SortHeader label={t('Revenue')} sortKey="revenue" activeKey={plSort.sortKey} dir={plSort.sortDir} onSort={plSort.onSort} className="text-right" />
+                    <SortHeader label={t('Rent')} sortKey="rent" activeKey={plSort.sortKey} dir={plSort.sortDir} onSort={plSort.onSort} className="text-right" />
+                    <SortHeader label={t('Salaries')} sortKey="salaries" activeKey={plSort.sortKey} dir={plSort.sortDir} onSort={plSort.onSort} className="text-right" />
+                    <SortHeader label={t('Hosting & domains')} sortKey="hosting" activeKey={plSort.sortKey} dir={plSort.sortDir} onSort={plSort.onSort} className="text-right" />
+                    <SortHeader label={t('Suppliers')} sortKey="suppliers" activeKey={plSort.sortKey} dir={plSort.sortDir} onSort={plSort.onSort} className="text-right" />
+                    <SortHeader label={t('Utilities')} sortKey="utilities" activeKey={plSort.sortKey} dir={plSort.sortDir} onSort={plSort.onSort} className="text-right" />
+                    <SortHeader label={t('Total expenses')} sortKey="expenses" activeKey={plSort.sortKey} dir={plSort.sortDir} onSort={plSort.onSort} className="text-right" />
+                    <SortHeader label={t('Net profit')} sortKey="profit" activeKey={plSort.sortKey} dir={plSort.sortDir} onSort={plSort.onSort} className="text-right" />
                   </tr>
                 </thead>
                 <tbody>
@@ -583,11 +583,11 @@ export default function Ledger({ api, fy, refreshKey, initialTrial, initialAccou
                             className="btn btn-link btn-sm p-0 mr-1"
                             onClick={() => togglePl(r.fy)}
                             aria-expanded={!!plExpanded[r.fy]}
-                            aria-label={(plExpanded[r.fy] ? 'Hide' : 'Show') + ' calculation for ' + r.label}
+                            aria-label={plExpanded[r.fy] ? t('Hide calculation for {fy}', { fy: digits(r.fy) }) : t('Show calculation for {fy}', { fy: digits(r.fy) })}
                           >
                             {plExpanded[r.fy] ? '▾' : '▸'}
                           </button>
-                          {' '}{r.label}
+                          {' '}{r.fy ? t('FY') + ' ' + digits(r.fy) : t('No fiscal year')}
                         </td>
                         <td className="text-right">{money(r.revenue)}</td>
                         <td className="text-right">{money(r.rent)}</td>
@@ -616,11 +616,11 @@ export default function Ledger({ api, fy, refreshKey, initialTrial, initialAccou
                             className="btn btn-link btn-sm p-0 mr-1"
                             onClick={() => togglePl('all')}
                             aria-expanded={!!plExpanded.all}
-                            aria-label={(plExpanded.all ? 'Hide' : 'Show') + ' calculation for all years'}
+                            aria-label={plExpanded.all ? t('Hide calculation for all years') : t('Show calculation for all years')}
                           >
                             {plExpanded.all ? '▾' : '▸'}
                           </button>
-                          {' '}<strong>Total</strong>
+                          {' '}<strong>{t('Total')}</strong>
                         </td>
                         <td className="text-right"><strong>{money(plTotal.revenue)}</strong></td>
                         <td className="text-right"><strong>{money(plTotal.rent)}</strong></td>
@@ -644,20 +644,16 @@ export default function Ledger({ api, fy, refreshKey, initialTrial, initialAccou
               </table>
             </div>
           ) : (
-            <p className="text-muted">No invoices on record for {effectiveFy}.</p>
+            <p className="text-muted">{t('No invoices on record for {fy}.', { fy: digits(effectiveFy) })}</p>
           )}
           {plNoFy && (
             <>
-              <h4 className="h6 mt-3">Invoices with no fiscal year — not counted in any year</h4>
+              <h4 className="h6 mt-3">{t('Invoices with no fiscal year — not counted in any year')}</h4>
               <PlDetail group={plNoFy} showProfit={false} />
             </>
           )}
           <p className="text-muted small">
-            Calculated from the invoice records, not from journal entries. Expenses are gross as recorded — supplier
-            bills include input VAT (e.g. Bagmati 107,500 includes 12,367.27 VAT). FY 2080/81 has no rent rows on
-            record, so its profit is overstated by the rent; the same gap, smaller, in FY 2076/77 and FY 2081/82–2082/83,
-            which have no salary rows. This is accrual-based (invoiced revenue vs incurred expenses), unlike the By
-            fiscal year Profit column, which is cash-based (received − paid out).
+            {t('Calculated from the invoice records, not from journal entries. Expenses are gross as recorded — supplier bills include input VAT (e.g. Bagmati 107,500 includes 12,367.27 VAT). FY 2080/81 has no rent rows on record, so its profit is overstated by the rent; the same gap, smaller, in FY 2076/77 and FY 2081/82–2082/83, which have no salary rows. This is accrual-based (invoiced revenue vs incurred expenses), unlike the By fiscal year Profit column, which is cash-based (received − paid out).')}
           </p>
         </>
       )}

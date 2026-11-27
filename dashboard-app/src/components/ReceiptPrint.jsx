@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { friendlyError, money } from '../api.js';
+import { friendlyError, money as moneyEn } from '../api.js';
+import { useLocale } from '../i18n.js';
 import { dateLabel } from '../dates.js';
 import { amountInWords } from '../words.js';
 
@@ -33,6 +34,7 @@ const SLIP_CSS = `
 `;
 
 export default function ReceiptPrint({ api, id, onClose, initialReceipt }) {
+  const { t } = useLocale();
   const [receipt, setReceipt] = useState(initialReceipt || null);
   const [loading, setLoading] = useState(!initialReceipt);
   const [loadError, setLoadError] = useState('');
@@ -54,9 +56,9 @@ export default function ReceiptPrint({ api, id, onClose, initialReceipt }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
-  if (loading) return <p className="text-muted">Loading receipt…</p>;
+  if (loading) return <p className="text-muted">{t('Loading receipt…')}</p>;
   if (loadError) return <div className="alert alert-danger" role="alert">{loadError}</div>;
-  if (!receipt) return <p className="text-muted">No such receipt.</p>;
+  if (!receipt) return <p className="text-muted">{t('No such receipt.')}</p>;
 
   const outgoing = !!receipt.is_outgoing;
   const receivedFrom = receipt.received_from || receipt.covers || '—';
@@ -67,10 +69,10 @@ export default function ReceiptPrint({ api, id, onClose, initialReceipt }) {
   return (
     <>
       <style>{SLIP_CSS}</style>
-      <h3 className="h5">Receipt {receipt.display_number || '—'}</h3>
+      <h3 className="h5">{t('Receipt {number}', { number: receipt.display_number || '—' })}</h3>
       <div className="preview-actions">
         <button type="button" className="inv-print" onClick={() => window.print()}>Print / Save as PDF</button>
-        <button type="button" className="btn btn-secondary" onClick={onClose}>Close</button>
+        <button type="button" className="btn btn-secondary" onClick={onClose}>{t('Close')}</button>
       </div>
       <div className="receipt-wrap">
         <div className="receipt-sheet">
@@ -90,7 +92,7 @@ export default function ReceiptPrint({ api, id, onClose, initialReceipt }) {
           </div>
           <div className="rc-line">The sum of Rs. In words <span className="rc-val">{words ? words + ' only.' : 'Amount unknown — see the register.'}</span></div>
           <div className="rc-line">by Cash/Cheque No./Draft No. <span className="rc-blank"></span> Bank Name <span className="rc-blank"></span></div>
-          <div className="rc-amount"><span>{receipt.amount_npr !== null && receipt.amount_npr !== undefined ? money(receipt.amount_npr) : 'unknown'}</span></div>
+          <div className="rc-amount"><span>{receipt.amount_npr !== null && receipt.amount_npr !== undefined ? moneyEn(receipt.amount_npr) : 'unknown'}</span></div>
           <div className="rc-signs">
             <svg className="rc-stamp" viewBox="0 0 120 120" width="104" height="104" aria-hidden="true">
               <circle cx="60" cy="60" r="56" fill="none" stroke="currentColor" strokeWidth="2" />
@@ -115,7 +117,7 @@ export default function ReceiptPrint({ api, id, onClose, initialReceipt }) {
           </div>
         </div>
         <p className="muted" style={{ margin: '14px 8px 0' }}>
-          {outgoing ? 'Outgoing — money we paid' : 'Incoming — money we received'}
+          {outgoing ? t('Outgoing — money we paid') : t('Incoming — money we received')}
         </p>
       </div>
     </>

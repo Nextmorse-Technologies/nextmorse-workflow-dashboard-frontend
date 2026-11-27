@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { money } from '../api.js';
+import { useLocale } from '../i18n.js';
 import { dateLabel, fyOfAd, fyOfBs, fyString } from '../dates.js';
 import { SortHeader, useTableSort } from '../sort.js';
 
@@ -59,21 +59,22 @@ export function taxRowsForFy(rows, fy) {
    come from the row as shown: FY from taxRowFy, the invoice number
    as its FY-number label, the due date from its AD date. */
 function TaxTable({ rows, sortKey, sortDir, onSort }) {
+  const { t, money, digits } = useLocale();
   return (
     <div className="table-responsive">
       <table className="table table-striped table-sm bg-white">
         <thead>
           <tr>
-            <SortHeader label="FY" sortKey="fy" activeKey={sortKey} dir={sortDir} onSort={onSort} />
-            <SortHeader label="Invoice no." sortKey="number" activeKey={sortKey} dir={sortDir} onSort={onSort} />
-            <SortHeader label="Client" sortKey="client" activeKey={sortKey} dir={sortDir} onSort={onSort} />
-            <SortHeader label="Item" sortKey="item" activeKey={sortKey} dir={sortDir} onSort={onSort} />
-            <SortHeader label="Amount" sortKey="amount" activeKey={sortKey} dir={sortDir} onSort={onSort} className="text-right" />
-            <SortHeader label="Turnover" sortKey="turnover" activeKey={sortKey} dir={sortDir} onSort={onSort} className="text-right" />
-            <SortHeader label="Due" sortKey="due" activeKey={sortKey} dir={sortDir} onSort={onSort} />
-            <SortHeader label="Status" sortKey="status" activeKey={sortKey} dir={sortDir} onSort={onSort} />
-            <SortHeader label="Certificate no." sortKey="certificate" activeKey={sortKey} dir={sortDir} onSort={onSort} />
-            <SortHeader label="Flag" sortKey="flag" activeKey={sortKey} dir={sortDir} onSort={onSort} />
+            <SortHeader label={t('FY')} sortKey="fy" activeKey={sortKey} dir={sortDir} onSort={onSort} />
+            <SortHeader label={t('Invoice no.')} sortKey="number" activeKey={sortKey} dir={sortDir} onSort={onSort} />
+            <SortHeader label={t('Client')} sortKey="client" activeKey={sortKey} dir={sortDir} onSort={onSort} />
+            <SortHeader label={t('Item')} sortKey="item" activeKey={sortKey} dir={sortDir} onSort={onSort} />
+            <SortHeader label={t('Amount')} sortKey="amount" activeKey={sortKey} dir={sortDir} onSort={onSort} className="text-right" />
+            <SortHeader label={t('Turnover')} sortKey="turnover" activeKey={sortKey} dir={sortDir} onSort={onSort} className="text-right" />
+            <SortHeader label={t('Due date')} sortKey="due" activeKey={sortKey} dir={sortDir} onSort={onSort} />
+            <SortHeader label={t('Status')} sortKey="status" activeKey={sortKey} dir={sortDir} onSort={onSort} />
+            <SortHeader label={t('Certificate no.')} sortKey="certificate" activeKey={sortKey} dir={sortDir} onSort={onSort} />
+            <SortHeader label={t('Flag')} sortKey="flag" activeKey={sortKey} dir={sortDir} onSort={onSort} />
           </tr>
         </thead>
         <tbody>
@@ -85,14 +86,14 @@ function TaxTable({ rows, sortKey, sortDir, onSort }) {
             const y = taxRowFy(r);
             return (
               <tr key={r.id || i} className={flag ? 'table-warning' : ''}>
-                <td>{y ? fyString(y) : '—'}</td>
+                <td>{y ? digits(fyString(y)) : '—'}</td>
                 <td>{invoiceNumberLabel(r)}</td>
                 <td>{r.client_name || '—'}</td>
                 <td>{r.item}</td>
                 <td className="text-right">{money(r.amount_npr)}</td>
                 <td className="text-right">{money(r.turnover_npr)}</td>
                 <td>{dateLabel(r.due_ad, r.due_bs)}</td>
-                <td>{r.status}</td>
+                <td>{r.status ? t(r.status) : '—'}</td>
                 <td>{cert}</td>
                 <td className="small">{flag}</td>
               </tr>
@@ -120,6 +121,7 @@ function FigureCard({ title, value }) {
 }
 
 export default function Tax({ data, fy, api, initialFigures }) {
+  const { t, money, digits } = useLocale();
   /* The fiscal year comes from the shared picker in the tab bar
      (App); this tab only filters on it. Hooks run before the
      early return below, so the figures fetch is unconditional. */
@@ -171,50 +173,46 @@ export default function Tax({ data, fy, api, initialFigures }) {
   return (
     <>
       <h3 className="h5">
-        Tax records{' '}
+        {t('Tax records')}{' '}
         <span className="badge badge-secondary">
-          {shown.length + ' rows'}
+          {t('{n} rows', { n: digits(shown.length) })}
         </span>
       </h3>
       <p className="text-muted small">
         {effectiveFy === 'all'
-          ? 'Showing all years.'
-          : 'Showing ' + effectiveFy + ' — money and government figures follow this fiscal year.'}
-        {' '}Clearance certificates on file:{' '}
-        {data.clearances_on_file !== undefined ? data.clearances_on_file : '—'}
-        {' '}(all years). Rows in yellow need attention.
+          ? t('Showing all years.')
+          : t('Showing {fy} — money and government figures follow this fiscal year.', { fy: digits(effectiveFy) })}
+        {' '}{t('Clearance certificates on file:')}{' '}
+        {data.clearances_on_file !== undefined ? digits(data.clearances_on_file) : '—'}
+        {' '}{t('(all years). Rows in yellow need attention.')}
       </p>
       {figures && (
         <>
-          <h4 className="h6 mt-3">VAT and TDS position</h4>
+          <h4 className="h6 mt-3">{t('VAT and TDS position')}</h4>
           <p className="text-muted small">
-            {effectiveFy === 'all' ? 'Showing all years.' : 'Showing ' + effectiveFy + '.'}
-            {' '}VAT credit is the VAT on suppliers' tax invoices (input VAT);
-            VAT payable is VAT collected less that credit. TDS credit is
-            the TDS clients deducted on paid invoices.
+            {effectiveFy === 'all' ? t('Showing all years.') : t('Showing {fy}.', { fy: digits(effectiveFy) })}
+            {' '}{t('VAT credit is the VAT on suppliers\' tax invoices (input VAT); VAT payable is VAT collected less that credit. TDS credit is the TDS clients deducted on paid invoices.')}
           </p>
           <div className="row">
-            <FigureCard title="VAT charged" value={money(vat.charged)} />
-            <FigureCard title="VAT collected" value={money(vat.collected)} />
-            <FigureCard title="VAT credit" value={money(vat.credit)} />
-            <FigureCard title="VAT payable (to IRD)" value={money(vat.payable)} />
-            <FigureCard title="TDS credit" value={money(tds.credit)} />
-            <FigureCard title="TDS payable" value={money(tds.payable)} />
+            <FigureCard title={t('VAT charged')} value={money(vat.charged)} />
+            <FigureCard title={t('VAT collected')} value={money(vat.collected)} />
+            <FigureCard title={t('VAT credit')} value={money(vat.credit)} />
+            <FigureCard title={t('VAT payable (to IRD)')} value={money(vat.payable)} />
+            <FigureCard title={t('TDS credit')} value={money(tds.credit)} />
+            <FigureCard title={t('TDS payable')} value={money(tds.payable)} />
           </div>
         </>
       )}
       {shown.length ? (
         <TaxTable rows={sortedShown} sortKey={shownSort.sortKey} sortDir={shownSort.sortDir} onSort={shownSort.onSort} />
       ) : (
-        <p className="text-muted">No tax records in this fiscal year.</p>
+        <p className="text-muted">{t('No tax records in this fiscal year.')}</p>
       )}
       {unplaced.length > 0 && (
         <>
-          <h4 className="h6 mt-4">No fiscal year — standing records</h4>
+          <h4 className="h6 mt-4">{t('No fiscal year — standing records')}</h4>
           <p className="text-muted small">
-            These records carry no fiscal year of their own — the rent-tax
-            explanation, clearance tasks and registrations — so they are
-            listed here instead of being hidden.
+            {t('These records carry no fiscal year of their own — the rent-tax explanation, clearance tasks and registrations — so they are listed here instead of being hidden.')}
           </p>
           <TaxTable rows={sortedUnplaced} sortKey={unplacedSort.sortKey} sortDir={unplacedSort.sortDir} onSort={unplacedSort.onSort} />
         </>

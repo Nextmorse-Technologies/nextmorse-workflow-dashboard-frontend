@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { friendlyError, money } from '../api.js';
+import { friendlyError } from '../api.js';
+import { useLocale } from '../i18n.js';
 import { dateLabel, fyOfAd, fyOfBs, fyString } from '../dates.js';
 import { SortHeader, sortInvoices, useTableSort } from '../sort.js';
 
@@ -190,17 +191,18 @@ export function statusBadge(status) {
    plain, as before. The Print column has no sort — it is an
    action, not data. */
 export function GroupTable({ items, onPrint, sortKey, sortDir, onSort }) {
+  const { t, money } = useLocale();
   return (
     <div className="table-responsive">
       <table className="table table-striped table-sm bg-white">
         <thead>
           <tr>
-            <SortHeader label="Invoice no." sortKey="number" activeKey={sortKey} dir={sortDir} onSort={onSort} />
-            <SortHeader label="Client" sortKey="client" activeKey={sortKey} dir={sortDir} onSort={onSort} />
-            <SortHeader label="Package / Service / Product" sortKey="service" activeKey={sortKey} dir={sortDir} onSort={onSort} />
-            <SortHeader label="Amount" sortKey="amount" activeKey={sortKey} dir={sortDir} onSort={onSort} className="text-right" />
-            <SortHeader label="Status" sortKey="status" activeKey={sortKey} dir={sortDir} onSort={onSort} />
-            <SortHeader label="Issued" sortKey="issued" activeKey={sortKey} dir={sortDir} onSort={onSort} />
+            <SortHeader label={t('Invoice no.')} sortKey="number" activeKey={sortKey} dir={sortDir} onSort={onSort} />
+            <SortHeader label={t('Client')} sortKey="client" activeKey={sortKey} dir={sortDir} onSort={onSort} />
+            <SortHeader label={t('Package / Service / Product')} sortKey="service" activeKey={sortKey} dir={sortDir} onSort={onSort} />
+            <SortHeader label={t('Amount')} sortKey="amount" activeKey={sortKey} dir={sortDir} onSort={onSort} className="text-right" />
+            <SortHeader label={t('Status')} sortKey="status" activeKey={sortKey} dir={sortDir} onSort={onSort} />
+            <SortHeader label={t('Issued')} sortKey="issued" activeKey={sortKey} dir={sortDir} onSort={onSort} />
             <th></th>
           </tr>
         </thead>
@@ -211,13 +213,13 @@ export function GroupTable({ items, onPrint, sortKey, sortDir, onSort }) {
               <td>{inv.client_name || '—'}</td>
               <td>{inv.service || '—'}</td>
               <td className="text-right">{money(inv.amount_npr)}</td>
-              <td><span className={'badge ' + statusBadge(inv.status)}>{inv.status}</span></td>
+              <td><span className={'badge ' + statusBadge(inv.status)}>{t(inv.status)}</span></td>
               <td>{dateLabel(inv.date_ad, inv.date_bs)}</td>
               <td>
                 {onPrint ? (
-                  <button type="button" className="btn btn-sm btn-secondary" onClick={() => onPrint(inv.id)}>Print</button>
+                  <button type="button" className="btn btn-sm btn-secondary" onClick={() => onPrint(inv.id)}>{t('Print')}</button>
                 ) : (
-                  <span className="text-muted">Print</span>
+                  <span className="text-muted">{t('Print')}</span>
                 )}
               </td>
             </tr>
@@ -229,6 +231,7 @@ export function GroupTable({ items, onPrint, sortKey, sortDir, onSort }) {
 }
 
 export default function Invoices({ api, refreshKey, fy, initialRows, initialCreditNotes, onPrintInvoice }) {
+  const { t, money, digits } = useLocale();
   const [rows, setRows] = useState(initialRows || null);
   const [creditNotes, setCreditNotes] = useState(initialCreditNotes || null);
   const [loading, setLoading] = useState(!initialRows || !initialCreditNotes);
@@ -308,50 +311,50 @@ export default function Invoices({ api, refreshKey, fy, initialRows, initialCred
 
   return (
     <>
-      <h3 className="h5">Tax invoices</h3>
+      <h3 className="h5">{t('Tax invoices')}</h3>
       <p className="mb-2 text-muted">
         {effectiveFy === 'all'
-          ? 'Showing all years.'
-          : 'Showing ' + effectiveFy + ' — money and government figures follow this fiscal year.'}
+          ? t('Showing all years.')
+          : t('Showing {fy} — money and government figures follow this fiscal year.', { fy: digits(effectiveFy) })}
       </p>
-      {loading && <p className="text-muted">Loading invoices…</p>}
+      {loading && <p className="text-muted">{t('Loading invoices…')}</p>}
       {loadError && <div className="alert alert-danger" role="alert">{loadError}</div>}
       {rows && creditNotes && (
         <>
           <div className="card mb-4">
             <div className="card-body">
               <h4 className="card-title h6">
-                Tax invoices ({taxInvoices.length}) — Subtotal: {money(groupTotal(taxInvoices))}
+                {t('Tax invoices ({n})', { n: digits(taxInvoices.length) })} — {t('Subtotal: {amount}', { amount: money(groupTotal(taxInvoices)) })}
               </h4>
               <p className="text-muted small">
-                Tax invoices only — the paper tax-invoice book. A row without the tax-invoice marker is not a tax invoice, even when VAT is recorded on it. Petty cash lives on its own tab.
+                {t('Tax invoices only — the paper tax-invoice book. A row without the tax-invoice marker is not a tax invoice, even when VAT is recorded on it. Petty cash lives on its own tab.')}
               </p>
               {taxInvoices.length ? (
                 <GroupTable items={taxInvoices} onPrint={onPrintInvoice} sortKey={taxSort.sortKey} sortDir={taxSort.sortDir} onSort={taxSort.onSort} />
               ) : (
-                <p className="text-muted mb-0">No tax invoices in this fiscal year.</p>
+                <p className="text-muted mb-0">{t('No tax invoices in this fiscal year.')}</p>
               )}
             </div>
           </div>
           <div className="card mb-4">
             <div className="card-body">
               <h4 className="card-title h6">
-                Credit notes — Subtotal: {money(creditNotesTotal(shownCreditNotes))}
+                {t('Credit notes')} — {t('Subtotal: {amount}', { amount: money(creditNotesTotal(shownCreditNotes)) })}
               </h4>
               <p className="text-muted small">
-                Amounts returned to clients on locked tax invoices. This card is read-only.
+                {t('Amounts returned to clients on locked tax invoices. This card is read-only.')}
               </p>
               {shownCreditNotes.length ? (
                 <div className="table-responsive">
                   <table className="table table-striped table-sm bg-white">
                     <thead>
                       <tr>
-                        <SortHeader label="Credit note no." sortKey="number" activeKey={cnSort.sortKey} dir={cnSort.sortDir} onSort={cnSort.onSort} />
-                        <SortHeader label="Invoice" sortKey="invoice" activeKey={cnSort.sortKey} dir={cnSort.sortDir} onSort={cnSort.onSort} />
-                        <SortHeader label="Client" sortKey="client" activeKey={cnSort.sortKey} dir={cnSort.sortDir} onSort={cnSort.onSort} />
-                        <SortHeader label="Reason" sortKey="reason" activeKey={cnSort.sortKey} dir={cnSort.sortDir} onSort={cnSort.onSort} />
-                        <SortHeader label="Amount" sortKey="amount" activeKey={cnSort.sortKey} dir={cnSort.sortDir} onSort={cnSort.onSort} className="text-right" />
-                        <SortHeader label="Issued" sortKey="issued" activeKey={cnSort.sortKey} dir={cnSort.sortDir} onSort={cnSort.onSort} />
+                        <SortHeader label={t('Credit note no.')} sortKey="number" activeKey={cnSort.sortKey} dir={cnSort.sortDir} onSort={cnSort.onSort} />
+                        <SortHeader label={t('Invoice')} sortKey="invoice" activeKey={cnSort.sortKey} dir={cnSort.sortDir} onSort={cnSort.onSort} />
+                        <SortHeader label={t('Client')} sortKey="client" activeKey={cnSort.sortKey} dir={cnSort.sortDir} onSort={cnSort.onSort} />
+                        <SortHeader label={t('Reason')} sortKey="reason" activeKey={cnSort.sortKey} dir={cnSort.sortDir} onSort={cnSort.onSort} />
+                        <SortHeader label={t('Amount')} sortKey="amount" activeKey={cnSort.sortKey} dir={cnSort.sortDir} onSort={cnSort.onSort} className="text-right" />
+                        <SortHeader label={t('Issued')} sortKey="issued" activeKey={cnSort.sortKey} dir={cnSort.sortDir} onSort={cnSort.onSort} />
                       </tr>
                     </thead>
                     <tbody>
@@ -369,7 +372,7 @@ export default function Invoices({ api, refreshKey, fy, initialRows, initialCred
                   </table>
                 </div>
               ) : (
-                <p className="text-muted mb-0">No credit notes in this fiscal year.</p>
+                <p className="text-muted mb-0">{t('No credit notes in this fiscal year.')}</p>
               )}
             </div>
           </div>

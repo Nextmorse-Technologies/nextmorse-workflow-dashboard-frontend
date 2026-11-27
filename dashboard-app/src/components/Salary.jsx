@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useState } from 'react';
-import { friendlyError, money } from '../api.js';
+import { friendlyError } from '../api.js';
+import { useLocale } from '../i18n.js';
 import { dateLabel } from '../dates.js';
 import { SortHeader, useTableSort } from '../sort.js';
 
@@ -75,6 +76,7 @@ export function dashainRows(invoices, fy) {
 }
 
 export default function Salary({ api, fy, refreshKey, initialInvoices }) {
+  const { t, money, digits } = useLocale();
   const effectiveFy = fy || 'all';
   const [invoices, setInvoices] = useState(initialInvoices || null);
   const [loading, setLoading] = useState(!initialInvoices);
@@ -143,34 +145,34 @@ export default function Salary({ api, fy, refreshKey, initialInvoices }) {
      where they are. */
   const byFy = {};
   sortedPaid.forEach((r) => {
-    const key = r.fiscal_year || 'No fiscal year';
+    const key = r.fiscal_year || t('No fiscal year');
     byFy[key] = byFy[key] || { rows: [], total: 0 };
     byFy[key].rows.push(r);
     byFy[key].total = Math.round((byFy[key].total + (Number(r.amount_npr) || 0)) * 100) / 100;
   });
   const fyGroups = Object.keys(byFy).sort().reverse();
 
-  const fyLabel = effectiveFy === 'all' ? 'all years' : effectiveFy;
+  const fyLabel = effectiveFy === 'all' ? t('all years') : digits(effectiveFy);
 
   return (
     <div>
-      <h4>Salary</h4>
+      <h4>{t('Salary')}</h4>
       <p className="text-muted">
-        The monthly staff salaries, paid on the 1st of the Nepali month by bank transfer.
+        {t('The monthly staff salaries, paid on the 1st of the Nepali month by bank transfer.')}
       </p>
       <p className="text-muted small">
-        Showing {fyLabel}.
+        {t('Showing {fy}.', { fy: fyLabel })}
       </p>
 
-      <h5 className="h6 mt-3">Salary rates</h5>
+      <h5 className="h6 mt-3">{t('Salary rates')}</h5>
       <div className="card">
         <div className="card-body">
           <table className="table table-sm mb-2">
             <thead>
               <tr>
-                <SortHeader label="Person" sortKey="person" activeKey={rateSort.sortKey} dir={rateSort.sortDir} onSort={rateSort.onSort} />
-                <SortHeader label="Monthly" sortKey="monthly" activeKey={rateSort.sortKey} dir={rateSort.sortDir} onSort={rateSort.onSort} className="text-right" />
-                <SortHeader label="Annual (13 months)" sortKey="annual" activeKey={rateSort.sortKey} dir={rateSort.sortDir} onSort={rateSort.onSort} className="text-right" />
+                <SortHeader label={t('Person')} sortKey="person" activeKey={rateSort.sortKey} dir={rateSort.sortDir} onSort={rateSort.onSort} />
+                <SortHeader label={t('Monthly')} sortKey="monthly" activeKey={rateSort.sortKey} dir={rateSort.sortDir} onSort={rateSort.onSort} className="text-right" />
+                <SortHeader label={t('Annual (13 months)')} sortKey="annual" activeKey={rateSort.sortKey} dir={rateSort.sortDir} onSort={rateSort.onSort} className="text-right" />
               </tr>
             </thead>
             <tbody>
@@ -182,36 +184,33 @@ export default function Salary({ api, fy, refreshKey, initialInvoices }) {
                 </tr>
               ))}
               <tr>
-                <td><strong>Total</strong></td>
+                <td><strong>{t('Total')}</strong></td>
                 <td className="text-right"><strong>{money(MONTHLY_TOTAL)}</strong></td>
                 <td className="text-right"><strong>{money(ANNUAL_TOTAL)}</strong></td>
               </tr>
             </tbody>
           </table>
           <p className="card-text mb-1">
-            12 months plus the Dashain allowance (one extra month — salary doubled at
-            Dashain) = 13 months a year, {money(ANNUAL_TOTAL)} at the current rates.
+            {t('12 months plus the Dashain allowance (one extra month — salary doubled at Dashain) = 13 months a year, {amount} at the current rates.', { amount: money(ANNUAL_TOTAL) })}
           </p>
           <p className="card-text mb-0 text-muted">
-            Standing rates confirmed 21 Nov 2026. Paid on the 1st of the Nepali month
-            by bank transfer.
+            {t('Standing rates confirmed 21 Nov 2026. Paid on the 1st of the Nepali month by bank transfer.')}
           </p>
         </div>
       </div>
 
-      <h5 className="h6 mt-4">Dashain allowance</h5>
+      <h5 className="h6 mt-4">{t('Dashain allowance')}</h5>
       <div className="card">
         <div className="card-body">
           <p className="card-text mb-1">
-            One extra month&apos;s salary at Dashain — {money(MONTHLY_TOTAL)} at the
-            current rates, on top of the 12 monthly payments.
+            {t('One extra month\'s salary at Dashain — {amount} at the current rates, on top of the 12 monthly payments.', { amount: money(MONTHLY_TOTAL) })}
           </p>
           {dashain.length > 0 ? (
             <table className="table table-sm mb-0">
               <thead>
                 <tr>
-                  <SortHeader label="Paid" sortKey="paid" activeKey={dashainSort.sortKey} dir={dashainSort.sortDir} onSort={dashainSort.onSort} />
-                  <SortHeader label="Amount" sortKey="amount" activeKey={dashainSort.sortKey} dir={dashainSort.sortDir} onSort={dashainSort.onSort} className="text-right" />
+                  <SortHeader label={t('Payment date')} sortKey="paid" activeKey={dashainSort.sortKey} dir={dashainSort.sortDir} onSort={dashainSort.onSort} />
+                  <SortHeader label={t('Amount')} sortKey="amount" activeKey={dashainSort.sortKey} dir={dashainSort.sortDir} onSort={dashainSort.onSort} className="text-right" />
                 </tr>
               </thead>
               <tbody>
@@ -225,37 +224,35 @@ export default function Salary({ api, fy, refreshKey, initialInvoices }) {
             </table>
           ) : effectiveFy === '2083/84' || effectiveFy === 'all' ? (
             <p className="card-text mb-0">
-              Dashain allowance for FY 2083/84: confirmed paid — {money(MONTHLY_TOTAL)}.
-              The payment date is still to be recorded, so it is not in the list below
-              yet and is not counted in the total below.
-              {effectiveFy === '2083/84' ? ' Dashain 2083 was in early October 2026.' : ' No Dashain allowance payment on record for other years.'}
+              {t('Dashain allowance for FY {fy}: confirmed paid — {amount}. The payment date is still to be recorded, so it is not in the list below yet and is not counted in the total below.', { fy: digits('2083/84'), amount: money(MONTHLY_TOTAL) })}
+              {effectiveFy === '2083/84' ? ' ' + t('Dashain {year} was in early October 2026.', { year: digits(2083) }) : ' ' + t('No Dashain allowance payment on record for other years.')}
             </p>
           ) : (
             <p className="card-text mb-0">
-              No Dashain allowance payment on record for {effectiveFy} yet.
+              {t('No Dashain allowance payment on record for {fy} yet.', { fy: digits(effectiveFy) })}
             </p>
           )}
         </div>
       </div>
 
-      <h5 className="h6 mt-4">Salary paid</h5>
+      <h5 className="h6 mt-4">{t('Salary paid')}</h5>
       <p className="text-muted small">
-        Showing {fyLabel}.
+        {t('Showing {fy}.', { fy: fyLabel })}
       </p>
-      {loading && <p className="text-muted">Loading salary payments…</p>}
+      {loading && <p className="text-muted">{t('Loading salary payments…')}</p>}
       {loadError && <div className="alert alert-danger" role="alert">{loadError}</div>}
       {invoices && (
         <>
-          <p className="text-muted">Total paid: {money(paid.total)}</p>
+          <p className="text-muted">{t('Total paid: {amount}', { amount: money(paid.total) })}</p>
           {paid.rows.length === 0 ? (
-            <p className="text-muted">No salary payments on record{effectiveFy === 'all' ? '' : ' for ' + effectiveFy}.</p>
+            <p className="text-muted">{effectiveFy === 'all' ? t('No salary payments on record.') : t('No salary payments on record for {fy}.', { fy: digits(effectiveFy) })}</p>
           ) : (
             <div className="table-responsive">
               <table className="table table-striped table-sm bg-white">
                 <thead>
                   <tr>
-                    <SortHeader label="Paid" sortKey="paid" activeKey={paidSort.sortKey} dir={paidSort.sortDir} onSort={paidSort.onSort} />
-                    <SortHeader label="Amount" sortKey="amount" activeKey={paidSort.sortKey} dir={paidSort.sortDir} onSort={paidSort.onSort} className="text-right" />
+                    <SortHeader label={t('Payment date')} sortKey="paid" activeKey={paidSort.sortKey} dir={paidSort.sortDir} onSort={paidSort.onSort} />
+                    <SortHeader label={t('Amount')} sortKey="amount" activeKey={paidSort.sortKey} dir={paidSort.sortDir} onSort={paidSort.onSort} className="text-right" />
                     <SortHeader label="Kedar" sortKey="kedar" activeKey={paidSort.sortKey} dir={paidSort.sortDir} onSort={paidSort.onSort} className="text-right" />
                     <SortHeader label="Bijaya" sortKey="bijaya" activeKey={paidSort.sortKey} dir={paidSort.sortDir} onSort={paidSort.onSort} className="text-right" />
                     <SortHeader label="Anishma" sortKey="anishma" activeKey={paidSort.sortKey} dir={paidSort.sortDir} onSort={paidSort.onSort} className="text-right" />
@@ -277,7 +274,7 @@ export default function Salary({ api, fy, refreshKey, initialInvoices }) {
                           );
                         })}
                         <tr key={'subtotal-' + g}>
-                          <td><strong>{g} subtotal</strong></td>
+                          <td><strong>{t('{fy} subtotal', { fy: digits(g) })}</strong></td>
                           <td className="text-right"><strong>{money(byFy[g].total)}</strong></td>
                           <td className="text-right">—</td>
                           <td className="text-right">—</td>
@@ -305,9 +302,7 @@ export default function Salary({ api, fy, refreshKey, initialInvoices }) {
           )}
           {anyUnsplit && (
             <p className="text-muted small">
-              The per-person split is shown only where a payment equals the current
-              monthly total of {money(MONTHLY_TOTAL)} — earlier years predate the
-              current rates, so no split is shown for them.
+              {t('The per-person split is shown only where a payment equals the current monthly total of {amount} — earlier years predate the current rates, so no split is shown for them.', { amount: money(MONTHLY_TOTAL) })}
             </p>
           )}
         </>

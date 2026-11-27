@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { friendlyError, money } from '../api.js';
+import { friendlyError } from '../api.js';
+import { useLocale } from '../i18n.js';
 import { dateLabel, fyOfBs } from '../dates.js';
 import { SortHeader, sortInvoices, useTableSort } from '../sort.js';
 import { displayNumber, displayReceiptNumber, GroupTable, isPettyInvoice, isSent, isTaxInvoice, lockedPettyCash, receiptNumberValue } from './Invoices.jsx';
@@ -26,6 +27,7 @@ export function total(items) {
 }
 
 export default function PettyCash({ api, refreshKey, fy, initialInvoices, initialReceipts, onPrintInvoice, onPrintReceipt }) {
+  const { t, money, digits } = useLocale();
   const [invoices, setInvoices] = useState(initialInvoices || null);
   const [receipts, setReceipts] = useState(initialReceipts || null);
   const [loading, setLoading] = useState(!initialInvoices || !initialReceipts);
@@ -123,72 +125,72 @@ export default function PettyCash({ api, refreshKey, fy, initialInvoices, initia
 
   return (
     <>
-      <h3 className="h5">Petty cash</h3>
+      <h3 className="h5">{t('Petty cash')}</h3>
       <p className="mb-2 text-muted">
         {effectiveFy === 'all'
-          ? 'Showing all years.'
-          : 'Showing ' + effectiveFy + ' — money and government figures follow this fiscal year.'}
+          ? t('Showing all years.')
+          : t('Showing {fy} — money and government figures follow this fiscal year.', { fy: digits(effectiveFy) })}
       </p>
-      {loading && <p className="text-muted">Loading petty cash…</p>}
+      {loading && <p className="text-muted">{t('Loading petty cash…')}</p>}
       {loadError && <div className="alert alert-danger" role="alert">{loadError}</div>}
       {invoices && receipts && (
         <>
           <div className="card mb-4">
             <div className="card-body">
               <h4 className="card-title h6">
-                Petty cash invoices — Subtotal: {money(total(shownInvoices))}
+                {t('Petty cash invoices')} — {t('Subtotal: {amount}', { amount: money(total(shownInvoices)) })}
               </h4>
               {shownInvoices.length ? (
                 <GroupTable items={sortedPetty} onPrint={onPrintInvoice} sortKey={pettySort.sortKey} sortDir={pettySort.sortDir} onSort={pettySort.onSort} />
               ) : (
-                <p className="text-muted mb-0">No petty cash invoices in this fiscal year.</p>
+                <p className="text-muted mb-0">{t('No petty cash invoices in this fiscal year.')}</p>
               )}
             </div>
           </div>
           <div className="card mb-4">
             <div className="card-body">
               <h4 className="card-title h6">
-                Locked petty cash invoices — Subtotal: {money(total(lockedPetty))}
+                {t('Locked petty cash invoices')} — {t('Subtotal: {amount}', { amount: money(total(lockedPetty)) })}
               </h4>
               <p className="text-muted small">
-                Paid invoices in this fiscal year — cash that remains as petty cash.
+                {t('Paid invoices in this fiscal year — cash that remains as petty cash.')}
               </p>
               {lockedPetty.length ? (
                 <GroupTable items={lockedPetty} onPrint={onPrintInvoice} sortKey={lockedSort.sortKey} sortDir={lockedSort.sortDir} onSort={lockedSort.onSort} />
               ) : (
-                <p className="text-muted mb-0">No locked petty cash invoices in this fiscal year.</p>
+                <p className="text-muted mb-0">{t('No locked petty cash invoices in this fiscal year.')}</p>
               )}
             </div>
           </div>
           <div className="card mb-4">
             <div className="card-body">
               <h4 className="card-title h6">
-                Invoices that fit neither tax nor petty cash — Subtotal: {money(total(unclassified))}
+                {t('Invoices that fit neither tax nor petty cash')} — {t('Subtotal: {amount}', { amount: money(total(unclassified)) })}
               </h4>
               <p className="text-muted small">
-                Sent invoices that are neither in the tax-invoice book nor petty cash — most have no treatment on file (no VAT, no TDS recorded); one carries a VAT-only treatment but no tax-invoice marker. They are listed here separately, never hidden, until confirmed.
+                {t('Sent invoices that are neither in the tax-invoice book nor petty cash — most have no treatment on file (no VAT, no TDS recorded); one carries a VAT-only treatment but no tax-invoice marker. They are listed here separately, never hidden, until confirmed.')}
               </p>
               {unclassified.length ? (
                 <GroupTable items={sortedUnclassified} onPrint={onPrintInvoice} sortKey={unclassifiedSort.sortKey} sortDir={unclassifiedSort.sortDir} onSort={unclassifiedSort.onSort} />
               ) : (
-                <p className="text-muted mb-0">No unclassified invoices in this fiscal year.</p>
+                <p className="text-muted mb-0">{t('No unclassified invoices in this fiscal year.')}</p>
               )}
             </div>
           </div>
           <div className="card mb-4">
             <div className="card-body">
               <h4 className="card-title h6">
-                Petty cash receipts — Subtotal: {money(total(shownReceipts))}
+                {t('Petty cash receipts')} — {t('Subtotal: {amount}', { amount: money(total(shownReceipts)) })}
               </h4>
               {shownReceipts.length ? (
                 <div className="table-responsive">
                   <table className="table table-striped table-sm bg-white">
                     <thead>
                       <tr>
-                        <SortHeader label="Receipt no." sortKey="number" activeKey={receiptSort.sortKey} dir={receiptSort.sortDir} onSort={receiptSort.onSort} />
-                        <SortHeader label="Details" sortKey="details" activeKey={receiptSort.sortKey} dir={receiptSort.sortDir} onSort={receiptSort.onSort} />
-                        <SortHeader label="Amount (NPR)" sortKey="amount" activeKey={receiptSort.sortKey} dir={receiptSort.sortDir} onSort={receiptSort.onSort} className="text-right" />
-                        <SortHeader label="Payment date" sortKey="date" activeKey={receiptSort.sortKey} dir={receiptSort.sortDir} onSort={receiptSort.onSort} />
+                        <SortHeader label={t('Receipt no.')} sortKey="number" activeKey={receiptSort.sortKey} dir={receiptSort.sortDir} onSort={receiptSort.onSort} />
+                        <SortHeader label={t('Details')} sortKey="details" activeKey={receiptSort.sortKey} dir={receiptSort.sortDir} onSort={receiptSort.onSort} />
+                        <SortHeader label={t('Amount (NPR)')} sortKey="amount" activeKey={receiptSort.sortKey} dir={receiptSort.sortDir} onSort={receiptSort.onSort} className="text-right" />
+                        <SortHeader label={t('Payment date')} sortKey="date" activeKey={receiptSort.sortKey} dir={receiptSort.sortDir} onSort={receiptSort.onSort} />
                         <th></th>
                       </tr>
                     </thead>
@@ -202,10 +204,10 @@ export default function PettyCash({ api, refreshKey, fy, initialInvoices, initia
                           <td>
                             {onPrintReceipt ? (
                               <button type="button" className="btn btn-sm btn-secondary" onClick={() => onPrintReceipt(r.id)}>
-                                {'Receipt ' + receiptNumber(r)}
+                                {t('Receipt {number}', { number: receiptNumber(r) })}
                               </button>
                             ) : (
-                              <span className="text-muted">{'Receipt ' + receiptNumber(r)}</span>
+                              <span className="text-muted">{t('Receipt {number}', { number: receiptNumber(r) })}</span>
                             )}
                           </td>
                         </tr>
@@ -214,7 +216,7 @@ export default function PettyCash({ api, refreshKey, fy, initialInvoices, initia
                   </table>
                 </div>
               ) : (
-                <p className="text-muted mb-0">No petty cash receipts in this fiscal year.</p>
+                <p className="text-muted mb-0">{t('No petty cash receipts in this fiscal year.')}</p>
               )}
             </div>
           </div>

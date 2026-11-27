@@ -6,6 +6,7 @@ import {
   friendlyError,
 } from './api.js';
 import { fyString, parseBs } from './dates.js';
+import { useLocale } from './i18n.js';
 import Overview from './components/Overview.jsx';
 import Tax from './components/Tax.jsx';
 import Bank from './components/Bank.jsx';
@@ -39,6 +40,7 @@ const TABS = [
 
 function Header({ signedIn, onReload, onSignOut }) {
   const [navOpen, setNavOpen] = useState(false);
+  const { t, locale, setLocale } = useLocale();
   return (
     <header className="header">
       <div className="container">
@@ -48,7 +50,7 @@ function Header({ signedIn, onReload, onSignOut }) {
               <button
                 type="button"
                 className="navbar-toggler"
-                aria-label="Toggle navigation"
+                aria-label={t('Toggle navigation')}
                 onClick={() => setNavOpen((o) => !o)}
               >
                 <i className="fas fa-align-left"></i>
@@ -59,16 +61,16 @@ function Header({ signedIn, onReload, onSignOut }) {
               <div className={'navbar-collapse collapse' + (navOpen ? ' show' : '')}>
                 <ul className="nav navbar-nav">
                   <li className="nav-item">
-                    <a className="nav-link" href="/index.html">Home</a>
+                    <a className="nav-link" href="/index.html">{t('Home')}</a>
                   </li>
                   <li className="nav-item">
-                    <a href="/index.html#service" className="nav-link">Services</a>
+                    <a href="/index.html#service" className="nav-link">{t('Services')}</a>
                   </li>
                   <li className="nav-item">
-                    <a href="/index.html#about-us" className="nav-link">Company</a>
+                    <a href="/index.html#about-us" className="nav-link">{t('Company')}</a>
                   </li>
                   <li className="nav-item">
-                    <a href="/index.html#contact" className="nav-link">Contact</a>
+                    <a href="/index.html#contact" className="nav-link">{t('Contact')}</a>
                   </li>
                   {signedIn && (
                     <>
@@ -78,7 +80,7 @@ function Header({ signedIn, onReload, onSignOut }) {
                           href="#reload"
                           onClick={(e) => { e.preventDefault(); onReload(); }}
                         >
-                          Reload
+                          {t('Reload')}
                         </a>
                       </li>
                       <li className="nav-item">
@@ -87,11 +89,29 @@ function Header({ signedIn, onReload, onSignOut }) {
                           href="#signout"
                           onClick={(e) => { e.preventDefault(); onSignOut(); }}
                         >
-                          Sign out
+                          {t('Sign out')}
                         </a>
                       </li>
                     </>
                   )}
+                  <li className="nav-item d-flex align-items-center pl-3">
+                    <div className="btn-group btn-group-sm" role="group" aria-label="Language">
+                      <button
+                        type="button"
+                        className={'btn ' + (locale === 'en' ? 'btn-primary' : 'btn-outline-secondary')}
+                        onClick={() => setLocale('en')}
+                      >
+                        EN
+                      </button>
+                      <button
+                        type="button"
+                        className={'btn ' + (locale === 'ne' ? 'btn-primary' : 'btn-outline-secondary')}
+                        onClick={() => setLocale('ne')}
+                      >
+                        नेपाली
+                      </button>
+                    </div>
+                  </li>
                 </ul>
               </div>
             </nav>
@@ -103,6 +123,7 @@ function Header({ signedIn, onReload, onSignOut }) {
 }
 
 function Footer() {
+  const { t } = useLocale();
   return (
     <footer className="footer space-ptb bg-light mt-n5">
       <div className="footer-bottom mt-5">
@@ -118,7 +139,7 @@ function Footer() {
                 </li>
               </ul>
               <p className="mb-0 text-dark">
-                &copy;Copyright 2022 <a href="/index.html">Nextmorse</a> All Rights Reserved
+                &copy;Copyright 2022 <a href="/index.html">Nextmorse</a> {t('All Rights Reserved')}
               </p>
             </div>
           </div>
@@ -129,6 +150,12 @@ function Footer() {
 }
 
 export default function App() {
+  const { t, digits } = useLocale();
+  /* The tab's translated name, for the status lines. */
+  function tabLabel(key) {
+    const tab = TABS.find((x) => x.key === key);
+    return tab ? t(tab.label) : key;
+  }
   const [signedIn, setSignedIn] = useState(false);
   const [authChecked, setAuthChecked] = useState(false);
   const [dashStatus, setDashStatus] = useState('');
@@ -191,7 +218,7 @@ export default function App() {
   /* Section loaders (lazy: each section loads on first view). */
   async function loadSection(key) {
     setDashError('');
-    setDashStatus('Loading ' + key + '…');
+    setDashStatus(t('Loading {tab}…', { tab: tabLabel(key) }));
     try {
       if (key === 'overview') {
         /* The headline figures follow the Fiscal year picker: the
@@ -201,7 +228,7 @@ export default function App() {
         overviewFyRef.current = effectiveFy;
         setLedgerRefresh((n) => n + 1);
         if (d && d.verified_at) setVerifiedAt(d.verified_at);
-        if (d && d.source) setDashSource('Source: ' + d.source);
+        if (d && d.source) setDashSource(t('Source: {source}', { source: d.source }));
       } else if (key === 'tax') {
         const d = await api('/tax');
         setSections((s) => ({ ...s, tax: d }));
@@ -232,10 +259,10 @@ export default function App() {
            vendor bills; a refresh tells it to fetch again. */
         setVendorRefresh((n) => n + 1);
       }
-      setDashStatus('Loaded ' + key + ' · ' + new Date().toLocaleTimeString());
+      setDashStatus(t('Loaded {tab} · {time}', { tab: tabLabel(key), time: digits(new Date().toLocaleTimeString()) }));
     } catch (err) {
       setDashError(friendlyError(err));
-      setDashStatus('Could not load ' + key + '.');
+      setDashStatus(t('Could not load {tab}.', { tab: tabLabel(key) }));
     }
   }
 
@@ -342,7 +369,7 @@ export default function App() {
       .then((d) => {
         setSections((s) => ({ ...s, overview: d }));
         if (d && d.verified_at) setVerifiedAt(d.verified_at);
-        if (d && d.source) setDashSource('Source: ' + d.source);
+        if (d && d.source) setDashSource(t('Source: {source}', { source: d.source }));
         setSignedIn(true);
         setAuthChecked(true);
         loadClients();
@@ -402,7 +429,7 @@ export default function App() {
           color: '#94a3b8',
         }}
       >
-        Loading…
+        {t('Loading…')}
       </div>
     );
   }
@@ -427,34 +454,34 @@ export default function App() {
                 )}
 
                 <ul className="nav nav-tabs" role="tablist">
-                  {TABS.map((t) => (
-                    <li className="nav-item" key={t.key}>
+                  {TABS.map((tab) => (
+                    <li className="nav-item" key={tab.key}>
                       <a
-                        className={'nav-link' + (activeTab === t.key ? ' active' : '')}
-                        href={'#tab-' + t.key}
+                        className={'nav-link' + (activeTab === tab.key ? ' active' : '')}
+                        href={'#tab-' + tab.key}
                         role="tab"
-                        aria-selected={activeTab === t.key}
-                        onClick={(e) => { e.preventDefault(); selectTab(t.key); }}
+                        aria-selected={activeTab === tab.key}
+                        onClick={(e) => { e.preventDefault(); selectTab(tab.key); }}
                       >
-                        {t.label}
+                        {t(tab.label)}
                       </a>
                     </li>
                   ))}
                   {meta && (
                     <li className="nav-item ml-auto d-flex align-items-center pl-3">
-                      <label className="mb-0 mr-2 small text-muted">Fiscal year</label>
+                      <label className="mb-0 mr-2 small text-muted">{t('Fiscal year')}</label>
                       <MenuPicker
-                        buttonLabel={effectiveFy === 'all' ? 'All years' : ((meta.fiscal_years && meta.fiscal_years[effectiveFy]) || ('FY ' + effectiveFy))}
-                        options={[{ value: 'all', label: 'All years' }].concat(fyOptions.map((f) => ({
+                        buttonLabel={effectiveFy === 'all' ? t('All years') : digits((meta.fiscal_years && meta.fiscal_years[effectiveFy]) || (t('FY') + ' ' + effectiveFy))}
+                        options={[{ value: 'all', label: t('All years') }].concat(fyOptions.map((f) => ({
                           value: f,
-                          label: (meta.fiscal_years && meta.fiscal_years[f]) || ('FY ' + f),
+                          label: digits((meta.fiscal_years && meta.fiscal_years[f]) || (t('FY') + ' ' + f)),
                         })))}
                         open={fyOpen}
                         onToggle={() => setFyOpen(!fyOpen)}
                         onPick={(v) => { setFy(v); setFyOpen(false); }}
                         buttonClassName="form-control form-control-sm"
                         wrapStyle={{ width: 'auto', minWidth: 140 }}
-                        ariaLabel="Fiscal year"
+                        ariaLabel={t('Fiscal year')}
                       />
                     </li>
                   )}
@@ -552,7 +579,7 @@ export default function App() {
 
                 <hr />
                 <p className="text-muted small">
-                  Data from the Nextmorse unified API &middot; verified at{' '}
+                  {t('Data from the Nextmorse unified API')} &middot; {t('verified at')}{' '}
                   <span>{verifiedAt}</span> &middot; <span>{dashSource}</span>
                 </p>
               </div>

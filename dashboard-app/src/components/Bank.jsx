@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { money, fetchAllPages } from '../api.js';
+import { fetchAllPages } from '../api.js';
+import { useLocale } from '../i18n.js';
 import { fyOfAd, fyOfBs } from '../dates.js';
 import { SortHeader, useTableSort } from '../sort.js';
 import {
@@ -75,6 +76,7 @@ export function bankForFy(entries, fy) {
  * left out unless Bijaya ticks one back in — the same rule the
  * API applies, so the preview and the import agree. */
 function StatementImport({ api, onImported }) {
+  const { t, money, digits } = useLocale();
   const [open, setOpen] = useState(false);
   const [bank, setBank] = useState('Nabil Bank');
   const [bankOther, setBankOther] = useState('');
@@ -172,52 +174,58 @@ function StatementImport({ api, onImported }) {
       });
       const d = (resp && resp.data) || {};
       setResult(
-        'Imported ' + (d.created ?? 0) + ' entries into the register'
-        + ((d.skipped ?? 0) > 0 ? ' — ' + d.skipped + ' skipped as already in the register.' : '.'),
+        t('Imported {n} entries into the register', { n: digits(d.created ?? 0) })
+        + ((d.skipped ?? 0) > 0 ? t(' — {n} skipped as already in the register.', { n: digits(d.skipped) }) : '.'),
       );
       setText('');
       setRows([]); setHeaders(null); setMovements([]); setSkipped([]); setSelected({});
       await loadRegisterKeys();
       if (onImported) onImported();
     } catch (err) {
-      setError((err && err.message) || 'The import did not go through.');
+      setError((err && err.message) || t('The import did not go through.'));
     } finally {
       setImporting(false);
     }
   }
 
+  const columnLabels = {
+    date: t('Date column'),
+    description: t('Description column'),
+    debit: t('Debit column'),
+    credit: t('Credit column'),
+  };
+
   return (
     <div className="card mt-4">
       <div className="card-body">
-        <h4 className="h6 mb-1">Import a bank statement</h4>
+        <h4 className="h6 mb-1">{t('Import a bank statement')}</h4>
         <p className="text-muted small mb-2">
-          Download the statement as CSV from your bank — it needs Date, Description, Debit and Credit
-          columns. Nothing is saved until you confirm the preview below.
+          {t('Download the statement as CSV from your bank — it needs Date, Description, Debit and Credit columns. Nothing is saved until you confirm the preview below.')}
         </p>
         <button type="button" className="btn btn-outline-secondary btn-sm" onClick={toggleOpen}>
-          {open ? 'Close the import' : 'Import a statement (CSV)'}
+          {open ? t('Close the import') : t('Import a statement (CSV)')}
         </button>
         {open && (
           <div className="mt-3">
             <div className="row g-2 mb-2">
               <div className="col-md-4">
-                <label className="form-label small">Bank</label>
+                <label className="form-label small">{t('Bank')}</label>
                 <select className="form-select form-select-sm" value={bank} onChange={(e) => setBank(e.target.value)}>
                   <option>Nabil Bank</option>
                   <option>Kumari Bank</option>
-                  <option>Other</option>
+                  <option value="Other">{t('Other')}</option>
                 </select>
                 {bank === 'Other' && (
                   <input
                     className="form-control form-control-sm mt-1"
-                    placeholder="Bank name"
+                    placeholder={t('Bank name')}
                     value={bankOther}
                     onChange={(e) => setBankOther(e.target.value)}
                   />
                 )}
               </div>
               <div className="col-md-8">
-                <label className="form-label small">Statement file (.csv)</label>
+                <label className="form-label small">{t('Statement file (.csv)')}</label>
                 <input
                   type="file"
                   accept=".csv,text/csv"
@@ -240,12 +248,12 @@ function StatementImport({ api, onImported }) {
                 checked={hasHeader}
                 onChange={(e) => { setHasHeader(e.target.checked); if (text) parseText(text, e.target.checked); }}
               />
-              <label className="form-check-label small" htmlFor="statement-header">First row is a header</label>
+              <label className="form-check-label small" htmlFor="statement-header">{t('First row is a header')}</label>
             </div>
             <textarea
               className="form-control form-control-sm mb-2"
               rows={4}
-              placeholder="Or paste the CSV here…"
+              placeholder={t('Or paste the CSV here…')}
               value={text}
               onChange={(e) => parseText(e.target.value, hasHeader)}
             />
@@ -254,7 +262,7 @@ function StatementImport({ api, onImported }) {
                 <div className="row g-2 mb-2">
                   {['date', 'description', 'debit', 'credit'].map((field) => (
                     <div className="col-md-3" key={field}>
-                      <label className="form-label small text-capitalize">{field} column</label>
+                      <label className="form-label small">{columnLabels[field]}</label>
                       <select
                         className="form-select form-select-sm"
                         value={mapping[field] === null || mapping[field] === undefined ? '' : String(mapping[field])}
@@ -269,21 +277,21 @@ function StatementImport({ api, onImported }) {
                   ))}
                 </div>
                 <p className="text-muted small">
-                  {movements.length} movements
-                  {duplicateCount > 0 && (' · ' + duplicateCount + ' already in the register — left out unless ticked back in')}
-                  {skipped.length > 0 && (' · ' + skipped.length + ' rows skipped (' + skipped.map((s) => s.reason).join(', ') + ')')}
-                  {registerKeys === null && ' · Checking against the register…'}
+                  {t('{n} movements', { n: digits(movements.length) })}
+                  {duplicateCount > 0 && (' · ' + t('{n} already in the register — left out unless ticked back in', { n: digits(duplicateCount) }))}
+                  {skipped.length > 0 && (' · ' + t('{n} rows skipped ({reasons})', { n: digits(skipped.length), reasons: [...new Set(skipped.map((s) => t(s.reason)))].join(', ') }))}
+                  {registerKeys === null && (' · ' + t('Checking against the register…'))}
                 </p>
                 <div className="table-responsive" style={{ maxHeight: '320px', overflowY: 'auto' }}>
                   <table className="table table-striped table-sm bg-white">
                     <thead>
                       <tr>
                         <th></th>
-                        <th>Date</th>
-                        <th>Description</th>
-                        <th>Direction</th>
-                        <th className="text-right">Amount</th>
-                        <th>Status</th>
+                        <th>{t('Date')}</th>
+                        <th>{t('Description')}</th>
+                        <th>{t('Direction')}</th>
+                        <th className="text-right">{t('Amount')}</th>
+                        <th>{t('Status')}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -300,9 +308,9 @@ function StatementImport({ api, onImported }) {
                             </td>
                             <td>{m.date_ad}</td>
                             <td>{m.description || '—'}</td>
-                            <td>{m.direction}</td>
+                            <td>{t(m.direction)}</td>
                             <td className="text-right">{money(m.amount_npr)}</td>
-                            <td>{isDuplicate ? 'Already in register' : 'New'}</td>
+                            <td>{isDuplicate ? t('Already in register') : t('New')}</td>
                           </tr>
                         );
                       })}
@@ -310,7 +318,7 @@ function StatementImport({ api, onImported }) {
                   </table>
                 </div>
                 {movements.length > 100 && (
-                  <p className="text-muted small">Showing the first 100 of {movements.length} movements — all ticked rows are imported.</p>
+                  <p className="text-muted small">{t('Showing the first 100 of {n} movements — all ticked rows are imported.', { n: digits(movements.length) })}</p>
                 )}
                 <button
                   type="button"
@@ -318,12 +326,12 @@ function StatementImport({ api, onImported }) {
                   disabled={!checkedCount || importing || !effectiveBank}
                   onClick={submitImport}
                 >
-                  {importing ? 'Importing…' : 'Import ' + checkedCount + ' entries'}
+                  {importing ? t('Importing…') : t('Import {n} entries', { n: digits(checkedCount) })}
                 </button>
               </>
             )}
             {text && movements.length === 0 && (
-              <p className="text-muted small">No movements found — check the Date, Debit and Credit columns above.</p>
+              <p className="text-muted small">{t('No movements found — check the Date, Debit and Credit columns above.')}</p>
             )}
             {result && <div className="alert alert-success mt-2 mb-0" role="alert">{result}</div>}
             {error && <div className="alert alert-danger mt-2 mb-0" role="alert">{error}</div>}
@@ -335,6 +343,7 @@ function StatementImport({ api, onImported }) {
 }
 
 export default function Bank({ data, fy, api, onImported }) {
+  const { t, money, digits } = useLocale();
   /* One sort state for the register; it starts in its original
      order. The table sorts only the entries actually shown, after
      the fiscal-year filter. */
@@ -356,33 +365,33 @@ export default function Bank({ data, fy, api, onImported }) {
   return (
     <>
       <h3 className="h5">
-        Bank register{' '}
+        {t('Bank register')}{' '}
         <span className="badge badge-secondary">{money(balance)}</span>
       </h3>
       <p className="text-muted small">
         {effectiveFy === 'all'
-          ? 'Showing all years — balance is the current register balance.'
-          : 'Showing ' + effectiveFy + ' — balance is the register balance at the end of ' + effectiveFy + '.'}
-        {' '}Deposits {money(deposits)} &middot; Withdrawals {money(withdrawals)} &middot; Net {money(net)} &middot;{' '}
-        {entries.length} entries
+          ? t('Showing all years — balance is the current register balance.')
+          : t('Showing {fy} — balance is the register balance at the end of {fy}.', { fy: digits(effectiveFy) })}
+        {' '}{t('Deposits')} {money(deposits)} &middot; {t('Withdrawals')} {money(withdrawals)} &middot; {t('Net')} {money(net)} &middot;{' '}
+        {t('{n} entries', { n: digits(entries.length) })}
       </p>
       {entries.length ? (
         <div className="table-responsive">
           <table className="table table-striped table-sm bg-white">
             <thead>
               <tr>
-                <SortHeader label="Date" sortKey="date" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
-                <SortHeader label="Direction" sortKey="direction" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
-                <SortHeader label="Amount" sortKey="amount" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} className="text-right" />
-                <SortHeader label="Reference" sortKey="reference" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
-                <SortHeader label="Client" sortKey="client" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
+                <SortHeader label={t('Date')} sortKey="date" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
+                <SortHeader label={t('Direction')} sortKey="direction" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
+                <SortHeader label={t('Amount')} sortKey="amount" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} className="text-right" />
+                <SortHeader label={t('Reference')} sortKey="reference" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
+                <SortHeader label={t('Client')} sortKey="client" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
               </tr>
             </thead>
             <tbody>
               {sortedEntries.map((e, i) => (
                 <tr key={e.id || i}>
                   <td>{e.date}</td>
-                  <td>{e.direction}</td>
+                  <td>{t(e.direction)}</td>
                   <td className="text-right">{money(e.amount_npr)}</td>
                   <td>{e.reference || '—'}</td>
                   <td>{e.client === 'unknown' ? '—' : e.client}</td>
@@ -392,7 +401,7 @@ export default function Bank({ data, fy, api, onImported }) {
           </table>
         </div>
       ) : (
-        <p className="text-muted">No bank entries in this fiscal year.</p>
+        <p className="text-muted">{t('No bank entries in this fiscal year.')}</p>
       )}
       <StatementImport api={api} onImported={onImported} />
     </>

@@ -1,4 +1,5 @@
 import React from 'react';
+import { useLocale } from '../i18n.js';
 
 /* A dropdown made of plain buttons: the button shows the current
    choice, the panel lists the options. Unlike a native <select>,
@@ -8,6 +9,7 @@ import React from 'react';
    could land, on every form, so every picker in the dashboard uses
    this instead of <select>. */
 export default function MenuPicker({ buttonLabel, options, open, onToggle, onPick, emptyText, disabled, ariaLabel, buttonClassName, wrapStyle }) {
+  const { t } = useLocale();
   return (
     <div style={{ position: 'relative', ...(wrapStyle || {}) }}>
       <button
@@ -46,7 +48,7 @@ export default function MenuPicker({ buttonLabel, options, open, onToggle, onPic
                 {o.label}
               </button>
             )) : (
-              <div className="list-group-item text-muted">{emptyText || 'Nothing to pick.'}</div>
+              <div className="list-group-item text-muted">{emptyText || t('Nothing to pick.')}</div>
             )}
           </div>
         </>

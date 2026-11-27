@@ -1,4 +1,4 @@
-import { money } from '../api.js';
+import { useLocale } from '../i18n.js';
 import { SortHeader, useTableSort } from '../sort.js';
 import Reports from './Reports.jsx';
 import Ledger from './Ledger.jsx';
@@ -45,6 +45,7 @@ export function fyRowValue(r, key) {
 }
 
 export default function Overview({ data, api, fy, refreshKey }) {
+  const { t, money, digits } = useLocale();
   /* One sort state for the By fiscal year table; it starts in its
      original order. The table sorts only the years actually shown. */
   const sort = useTableSort(null);
@@ -64,39 +65,39 @@ export default function Overview({ data, api, fy, refreshKey }) {
   const sortedYears = sort.apply(yearsShown, fyRowValue);
   return (
     <>
-      <h3 className="h5">Headline figures</h3>
-      <p className="mb-3 text-muted small">Showing {fy === 'all' ? 'all years' : fy}.</p>
+      <h3 className="h5">{t('Headline figures')}</h3>
+      <p className="mb-3 text-muted small">{t('Showing {fy}.', { fy: fy === 'all' ? t('all years') : digits(fy) })}</p>
       <div className="row">
-        <FigureCard title="Invoiced (confirmed)" value={money(at.invoiced_confirmed)} />
-        <FigureCard title="Received" value={money(at.received)} />
-        <FigureCard title="Paid out" value={money(at.paid_out)} />
-        <FigureCard title="Net" value={money(at.net)} />
-        <FigureCard title="Open receivables" value={money(at.open_receivables)} />
+        <FigureCard title={t('Invoiced (confirmed)')} value={money(at.invoiced_confirmed)} />
+        <FigureCard title={t('Received')} value={money(at.received)} />
+        <FigureCard title={t('Paid out')} value={money(at.paid_out)} />
+        <FigureCard title={t('Net')} value={money(at.net)} />
+        <FigureCard title={t('Open receivables')} value={money(at.open_receivables)} />
         {/* The bank balance is the current balance — a balance, not a
             year's amount — so it never follows the year picker. */}
-        <FigureCard title={fy && fy !== 'all' ? 'Bank balance (current)' : 'Bank balance'} value={money(br.balance)} />
-        <FigureCard title="VAT payable" value={money(vat.payable)} />
-        <FigureCard title="TDS payable" value={money(tds.payable)} />
+        <FigureCard title={fy && fy !== 'all' ? t('Bank balance (current)') : t('Bank balance')} value={money(br.balance)} />
+        <FigureCard title={t('VAT payable')} value={money(vat.payable)} />
+        <FigureCard title={t('TDS payable')} value={money(tds.payable)} />
       </div>
-      <h3 className="h5 mt-4">By fiscal year</h3>
+      <h3 className="h5 mt-4">{t('By fiscal year')}</h3>
       <div className="table-responsive">
         <table className="table table-striped table-sm bg-white">
           <thead>
             <tr>
-              <SortHeader label="Fiscal year" sortKey="fy" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
-              <SortHeader label="Invoiced" sortKey="invoiced" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} className="text-right" />
-              <SortHeader label="Invoiced from invoices" sortKey="invoiced_invoices" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} className="text-right" />
-              <SortHeader label="Confirmed" sortKey="confirmed" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} className="text-right" />
-              <SortHeader label="Gap" sortKey="gap" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} className="text-right" />
-              <SortHeader label="Received" sortKey="received" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} className="text-right" />
-              <SortHeader label="Paid out" sortKey="paid" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} className="text-right" />
-              <SortHeader label="Profit" sortKey="profit" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} className="text-right" />
+              <SortHeader label={t('Fiscal year')} sortKey="fy" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
+              <SortHeader label={t('Invoiced')} sortKey="invoiced" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} className="text-right" />
+              <SortHeader label={t('Invoiced from invoices')} sortKey="invoiced_invoices" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} className="text-right" />
+              <SortHeader label={t('Confirmed')} sortKey="confirmed" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} className="text-right" />
+              <SortHeader label={t('Gap')} sortKey="gap" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} className="text-right" />
+              <SortHeader label={t('Received')} sortKey="received" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} className="text-right" />
+              <SortHeader label={t('Paid out')} sortKey="paid" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} className="text-right" />
+              <SortHeader label={t('Profit')} sortKey="profit" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} className="text-right" />
             </tr>
           </thead>
           <tbody>
             {sortedYears.length ? sortedYears.map((r) => (
               <tr key={r.label}>
-                <td>{r.label}</td>
+                <td>{digits(r.label)}</td>
                 <td className="text-right">{money(r.invoiced)}</td>
                 <td className="text-right">{money(r.invoiced_invoices)}</td>
                 <td className="text-right">{money(r.invoiced_confirmed)}</td>
@@ -106,7 +107,7 @@ export default function Overview({ data, api, fy, refreshKey }) {
                 <td className="text-right">{money(r.profit)}</td>
               </tr>
             )) : (
-              <tr><td colSpan={8} className="text-muted">No figures on record for {fy}.</td></tr>
+              <tr><td colSpan={8} className="text-muted">{t('No figures on record for {fy}.', { fy: digits(fy) })}</td></tr>
             )}
           </tbody>
         </table>

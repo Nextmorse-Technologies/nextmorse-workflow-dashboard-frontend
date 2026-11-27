@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { friendlyError, money } from '../api.js';
+import { friendlyError, money as moneyEn } from '../api.js';
+import { useLocale } from '../i18n.js';
 import { dateLabel } from '../dates.js';
 import { amountInWords } from '../words.js';
 import { displayNumber } from './Invoices.jsx';
@@ -73,6 +74,7 @@ const SHEET_CSS = `
 `;
 
 export default function InvoicePrint({ api, id, onClose, initialInvoice, initialClient }) {
+  const { t } = useLocale();
   const [inv, setInv] = useState(initialInvoice || null);
   const [client, setClient] = useState(initialClient || null);
   const [loading, setLoading] = useState(!initialInvoice);
@@ -120,9 +122,9 @@ export default function InvoicePrint({ api, id, onClose, initialInvoice, initial
     window.print();
   }
 
-  if (loading) return <p className="text-muted">Loading invoice…</p>;
+  if (loading) return <p className="text-muted">{t('Loading invoice…')}</p>;
   if (loadError) return <div className="alert alert-danger" role="alert">{loadError}</div>;
-  if (!inv) return <p className="text-muted">No such invoice.</p>;
+  if (!inv) return <p className="text-muted">{t('No such invoice.')}</p>;
 
   const vat = Number(inv.vat_npr) || 0;
   let subtotal = inv.subtotal_npr !== null && inv.subtotal_npr !== undefined ? Number(inv.subtotal_npr) : null;
@@ -138,10 +140,10 @@ export default function InvoicePrint({ api, id, onClose, initialInvoice, initial
   return (
     <>
       <style>{SHEET_CSS}</style>
-      <h3 className="h5">Invoice {displayNumber(inv)}</h3>
+      <h3 className="h5">{t('Invoice {number}', { number: displayNumber(inv) })}</h3>
       <div className="preview-actions">
         <button type="button" className="inv-print" onClick={handlePrint}>Print / Save as PDF</button>
-        <button type="button" className="btn btn-secondary" onClick={onClose}>Close</button>
+        <button type="button" className="btn btn-secondary" onClick={onClose}>{t('Close')}</button>
       </div>
       <div className="tax-wrap">
         <div className="tax-sheet">
@@ -186,7 +188,7 @@ export default function InvoicePrint({ api, id, onClose, initialInvoice, initial
           <table className="tax-table">
             <tbody>
               <tr><th style={{ width: '7%' }}>S.No.</th><th style={{ width: '11%' }}>H.S. Code</th><th>Particulars</th><th style={{ width: '8%' }}>Qty</th><th style={{ width: '14%' }}>Rate</th><th style={{ width: '15%' }}>Amount</th></tr>
-              <tr><td className="c">1</td><td></td><td>{particulars}</td><td className="c">1</td><td className="num">{subtotal !== null ? money(subtotal) : 'unknown'}</td><td className="num">{subtotal !== null ? money(subtotal) : 'unknown'}</td></tr>
+              <tr><td className="c">1</td><td></td><td>{particulars}</td><td className="c">1</td><td className="num">{subtotal !== null ? moneyEn(subtotal) : 'unknown'}</td><td className="num">{subtotal !== null ? moneyEn(subtotal) : 'unknown'}</td></tr>
               <tr><td colSpan="6" style={{ height: '110px' }}></td></tr>
             </tbody>
           </table>
@@ -195,11 +197,11 @@ export default function InvoicePrint({ api, id, onClose, initialInvoice, initial
             <div className="tax-totals">
               {vat > 0 && (
                 <>
-                  <div><span>Total Taxable amount</span><span className="num">{subtotal !== null ? money(subtotal) : '—'}</span></div>
-                  <div><span>13% VAT</span><span className="num">{money(vat)}</span></div>
+                  <div><span>Total Taxable amount</span><span className="num">{subtotal !== null ? moneyEn(subtotal) : '—'}</span></div>
+                  <div><span>13% VAT</span><span className="num">{moneyEn(vat)}</span></div>
                 </>
               )}
-              <div className="tax-grand"><span>Grand Total</span><span className="num">{total !== null ? money(total) : 'unknown'}</span></div>
+              <div className="tax-grand"><span>Grand Total</span><span className="num">{total !== null ? moneyEn(total) : 'unknown'}</span></div>
             </div>
           </div>
           <div className="tax-signs">
@@ -209,7 +211,7 @@ export default function InvoicePrint({ api, id, onClose, initialInvoice, initial
           </div>
         </div>
         <p className="muted" style={{ margin: '14px 8px 0' }}>
-          {inv.status === 'Paid' && inv.paid_date_ad ? 'Paid on ' + dateLabel(inv.paid_date_ad, inv.paid_date_bs) + '. ' : ''}
+          {inv.status === 'Paid' && inv.paid_date_ad ? t('Paid on {date}.', { date: dateLabel(inv.paid_date_ad, inv.paid_date_bs) }) + ' ' : ''}
           {inv.notes || ''}
         </p>
       </div>

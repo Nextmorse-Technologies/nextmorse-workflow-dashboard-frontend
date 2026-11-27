@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
-import { fieldErrors, friendlyError, money, TREATMENT_LABELS, TREATMENTS_FALLBACK } from '../api.js';
+import { fieldErrors, friendlyError, TREATMENT_LABELS, TREATMENTS_FALLBACK } from '../api.js';
+import { useLocale } from '../i18n.js';
 import { dateLabel, fyOfAd } from '../dates.js';
+import { CYCLE_LABELS } from './VendorServices.jsx';
 import { SortHeader, useTableSort } from '../sort.js';
 
 /* The Laravel /billing/rules page, from the API: the recurring
@@ -51,6 +53,7 @@ export function rulesForFy(rows, fy) {
    It starts in its original order (client, then rule). The
    Issue invoice column has no sort; it is an action. */
 function RuleTable({ rows, clientNames, clientDomains, onIssueInvoice }) {
+  const { t, money } = useLocale();
   const sort = useTableSort(null);
   const sorted = sort.apply(rows, (r, key) => {
     switch (key) {
@@ -67,10 +70,10 @@ function RuleTable({ rows, clientNames, clientDomains, onIssueInvoice }) {
     <tr key={r.id}>
       <td>{clientNames[r.client_id] || '—'}</td>
       <td>{r.service}</td>
-      <td>{r.cycle || '—'}</td>
+      <td>{r.cycle ? t(CYCLE_LABELS[r.cycle] || r.cycle) : '—'}</td>
       <td className="text-right">{r.amount_npr != null ? money(r.amount_npr) : '—'}</td>
-      <td>{r.treatment || '—'}</td>
-      <td>{r.tds_status || '—'}</td>
+      <td>{r.treatment ? t(TREATMENT_LABELS[r.treatment] || r.treatment) : '—'}</td>
+      <td>{r.tds_status ? t(r.tds_status) : '—'}</td>
       <td>{r.next_due_ad ? dateLabel(r.next_due_ad) : '—'}</td>
       <td>
         <button
@@ -78,7 +81,7 @@ function RuleTable({ rows, clientNames, clientDomains, onIssueInvoice }) {
           className="btn btn-sm btn-primary"
           onClick={() => onIssueInvoice && onIssueInvoice(r, clientNames[r.client_id] || '', clientDomains[r.client_id] || '')}
         >
-          Issue invoice
+          {t('Issue invoice')}
         </button>
       </td>
     </tr>
@@ -88,14 +91,14 @@ function RuleTable({ rows, clientNames, clientDomains, onIssueInvoice }) {
       <table className="table table-striped table-sm bg-white">
         <thead>
           <tr>
-            <SortHeader label="Client" sortKey="client" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
-            <SortHeader label="Service" sortKey="service" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
-            <SortHeader label="Cycle" sortKey="cycle" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
-            <SortHeader label="Amount" sortKey="amount" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} className="text-right" />
-            <SortHeader label="Treatment" sortKey="treatment" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
-            <SortHeader label="TDS" sortKey="tds" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
-            <SortHeader label="Next due" sortKey="nextDue" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
-            <th>Invoice</th>
+            <SortHeader label={t('Client')} sortKey="client" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
+            <SortHeader label={t('Service')} sortKey="service" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
+            <SortHeader label={t('Cycle')} sortKey="cycle" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
+            <SortHeader label={t('Amount')} sortKey="amount" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} className="text-right" />
+            <SortHeader label={t('Treatment')} sortKey="treatment" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
+            <SortHeader label={t('TDS')} sortKey="tds" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
+            <SortHeader label={t('Next due')} sortKey="nextDue" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
+            <th>{t('Invoice')}</th>
           </tr>
         </thead>
         <tbody>
@@ -144,6 +147,7 @@ export function emptyRuleForm() {
    is active, so it shows in the list and in the Issue-invoice picker
    at once. Creating it posts nothing and numbers no invoice. */
 function CreateRuleForm({ api, clients, onCreated }) {
+  const { t } = useLocale();
   const [form, setForm] = useState(emptyRuleForm());
   const [errors, setErrors] = useState({});
   const [formError, setFormError] = useState('');
@@ -162,7 +166,7 @@ function CreateRuleForm({ api, clients, onCreated }) {
       const resp = await api('/billing-rules', { method: 'POST', body: createRulePayload(form) });
       const rec = (resp && resp.data) || {};
       const name = (clients || []).find((c) => String(c.id) === String(form.clientId));
-      setCreated('Rule created for ' + (name ? name.name : 'client ' + form.clientId) + ' — ' + (rec.service || form.service) + '.');
+      setCreated(t('Rule created for {name} — {service}.', { name: name ? name.name : 'client ' + form.clientId, service: rec.service || form.service }));
       setForm(emptyRuleForm());
       if (onCreated) onCreated();
     } catch (err) {
@@ -176,20 +180,18 @@ function CreateRuleForm({ api, clients, onCreated }) {
   return (
     <div className="card mb-4">
       <div className="card-body">
-        <h4 className="card-title h6">Create a billing rule</h4>
+        <h4 className="card-title h6">{t('Create a billing rule')}</h4>
         <p className="text-muted small">
-          A new recurring charge. It is active at once, so it shows in the list
-          and in the Issue-invoice picker. Creating it posts nothing and numbers
-          no invoice — issuing one from it is a separate step.
+          {t('A new recurring charge. It is active at once, so it shows in the list and in the Issue-invoice picker. Creating it posts nothing and numbers no invoice — issuing one from it is a separate step.')}
         </p>
         {created && <div className="alert alert-success" role="alert">{created}</div>}
         {formError && <div className="alert alert-danger" role="alert">{formError}</div>}
         <form onSubmit={submit}>
           <div className="form-row">
             <div className="form-group col-md-6">
-              <label htmlFor="rule-client">Client</label>
+              <label htmlFor="rule-client">{t('Client')}</label>
               <select id="rule-client" className="form-control" value={form.clientId} onChange={(e) => set('clientId', e.target.value)} required>
-                <option value="">Pick a client…</option>
+                <option value="">{t('Pick a client…')}</option>
                 {sortedClients.map((c) => (
                   <option key={c.id} value={c.id}>{c.name}</option>
                 ))}
@@ -197,32 +199,32 @@ function CreateRuleForm({ api, clients, onCreated }) {
               <FieldError msg={errors.client_id && errors.client_id[0]} />
             </div>
             <div className="form-group col-md-6">
-              <label htmlFor="rule-service">Service</label>
-              <input id="rule-service" type="text" className="form-control" value={form.service} onChange={(e) => set('service', e.target.value)} placeholder="e.g. Hosting & domains" required />
+              <label htmlFor="rule-service">{t('Service')}</label>
+              <input id="rule-service" type="text" className="form-control" value={form.service} onChange={(e) => set('service', e.target.value)} placeholder={t('e.g. Hosting & domains')} required />
               <FieldError msg={errors.service && errors.service[0]} />
             </div>
           </div>
           <div className="form-row">
             <div className="form-group col-md-4">
-              <label htmlFor="rule-cycle">Cycle</label>
+              <label htmlFor="rule-cycle">{t('Cycle')}</label>
               <select id="rule-cycle" className="form-control" value={form.cycle} onChange={(e) => set('cycle', e.target.value)}>
                 {CYCLES.map((c) => (
-                  <option key={c} value={c}>{c}</option>
+                  <option key={c} value={c}>{t(CYCLE_LABELS[c])}</option>
                 ))}
               </select>
               <FieldError msg={errors.cycle && errors.cycle[0]} />
             </div>
             <div className="form-group col-md-4">
-              <label htmlFor="rule-amount">Amount (NPR)</label>
-              <input id="rule-amount" type="number" min="0" step="0.01" className="form-control" value={form.amount} onChange={(e) => set('amount', e.target.value)} placeholder="Blank when it varies" />
+              <label htmlFor="rule-amount">{t('Amount (NPR)')}</label>
+              <input id="rule-amount" type="number" min="0" step="0.01" className="form-control" value={form.amount} onChange={(e) => set('amount', e.target.value)} placeholder={t('Blank when it varies')} />
               <FieldError msg={errors.amount_npr && errors.amount_npr[0]} />
             </div>
             <div className="form-group col-md-4">
-              <label htmlFor="rule-treatment">Treatment</label>
+              <label htmlFor="rule-treatment">{t('Treatment')}</label>
               <select id="rule-treatment" className="form-control" value={form.treatment} onChange={(e) => set('treatment', e.target.value)}>
-                <option value="">Unknown</option>
-                {TREATMENTS_FALLBACK.map((t) => (
-                  <option key={t} value={t}>{TREATMENT_LABELS[t]}</option>
+                <option value="">{t('Unknown')}</option>
+                {TREATMENTS_FALLBACK.map((code) => (
+                  <option key={code} value={code}>{t(TREATMENT_LABELS[code])}</option>
                 ))}
               </select>
               <FieldError msg={errors.treatment && errors.treatment[0]} />
@@ -230,44 +232,44 @@ function CreateRuleForm({ api, clients, onCreated }) {
           </div>
           <div className="form-row">
             <div className="form-group col-md-4">
-              <label htmlFor="rule-vat">VAT applies</label>
+              <label htmlFor="rule-vat">{t('VAT applies')}</label>
               <select id="rule-vat" className="form-control" value={form.vatApplies} onChange={(e) => set('vatApplies', e.target.value)}>
-                <option value="unknown">Unknown</option>
-                <option value="yes">Yes</option>
-                <option value="no">No</option>
-                <option value="not applicable">Not applicable</option>
+                <option value="unknown">{t('Unknown')}</option>
+                <option value="yes">{t('Yes')}</option>
+                <option value="no">{t('No')}</option>
+                <option value="not applicable">{t('Not applicable')}</option>
               </select>
               <FieldError msg={errors.vat_applies && errors.vat_applies[0]} />
             </div>
             <div className="form-group col-md-4">
-              <label htmlFor="rule-next-due">Next due</label>
+              <label htmlFor="rule-next-due">{t('Next due')}</label>
               <input id="rule-next-due" type="date" className="form-control" value={form.nextDue} onChange={(e) => set('nextDue', e.target.value)} />
               <FieldError msg={errors.next_due_ad && errors.next_due_ad[0]} />
             </div>
             <div className="form-group col-md-4">
-              <label htmlFor="rule-tds">TDS</label>
+              <label htmlFor="rule-tds">{t('TDS')}</label>
               <select id="rule-tds" className="form-control" value={form.tdsStatus} onChange={(e) => set('tdsStatus', e.target.value)}>
-                <option value="unknown">Unknown</option>
-                <option value="applies">Applies — Nextmorse pays it</option>
-                <option value="not applicable">Not applicable</option>
+                <option value="unknown">{t('Unknown')}</option>
+                <option value="applies">{t('Applies — Nextmorse pays it')}</option>
+                <option value="not applicable">{t('Not applicable')}</option>
               </select>
               <FieldError msg={errors.tds_status && errors.tds_status[0]} />
             </div>
           </div>
           <div className="form-row">
             <div className="form-group col-md-4">
-              <label htmlFor="rule-tds-amount">TDS amount (NPR)</label>
-              <input id="rule-tds-amount" type="number" min="0" step="0.01" className="form-control" value={form.tdsAmount} onChange={(e) => set('tdsAmount', e.target.value)} placeholder="Only when TDS applies" />
+              <label htmlFor="rule-tds-amount">{t('TDS amount (NPR)')}</label>
+              <input id="rule-tds-amount" type="number" min="0" step="0.01" className="form-control" value={form.tdsAmount} onChange={(e) => set('tdsAmount', e.target.value)} placeholder={t('Only when TDS applies')} />
               <FieldError msg={errors.tds_amount_npr && errors.tds_amount_npr[0]} />
             </div>
             <div className="form-group col-md-8">
-              <label htmlFor="rule-notes">Notes</label>
+              <label htmlFor="rule-notes">{t('Notes')}</label>
               <input id="rule-notes" type="text" className="form-control" value={form.notes} onChange={(e) => set('notes', e.target.value)} />
               <FieldError msg={errors.notes && errors.notes[0]} />
             </div>
           </div>
           <button type="submit" className="btn btn-primary" disabled={submitting}>
-            {submitting ? 'Creating…' : 'Create rule'}
+            {submitting ? t('Creating…') : t('Create rule')}
           </button>
         </form>
       </div>
@@ -276,6 +278,7 @@ function CreateRuleForm({ api, clients, onCreated }) {
 }
 
 export default function BillingRules({ api, clients, refreshKey, fy, onIssueInvoice, initialRules, initialClientNames, initialClientDomains }) {
+  const { t, digits } = useLocale();
   const [rules, setRules] = useState(initialRules || null);
   /* Bumped when a rule is created from the form, so the list
      refetches and the new rule shows at once. */
@@ -337,38 +340,36 @@ export default function BillingRules({ api, clients, refreshKey, fy, onIssueInvo
 
   return (
     <>
-      <h3 className="h5">Billing Rules</h3>
-      <p className="mb-2 text-muted">The recurring charges, with treatment and TDS status.</p>
+      <h3 className="h5">{t('Billing rules')}</h3>
+      <p className="mb-2 text-muted">{t('The recurring charges, with treatment and TDS status.')}</p>
       <p className="mb-2 text-muted">
         {effectiveFy === 'all'
-          ? 'Showing all years.'
-          : 'Showing ' + effectiveFy + ' — rules due in ' + effectiveFy + ' by their next due date.'}
+          ? t('Showing all years.')
+          : t('Showing {fy} — rules due in {fy} by their next due date.', { fy: digits(effectiveFy) })}
       </p>
       <CreateRuleForm api={api} clients={clients} onCreated={() => setCreatedCount((n) => n + 1)} />
       {rules && hiddenCount > 0 && (
         <p className="text-muted small">
-          Showing {activeRules(rules).length} active rules — {hiddenCount} hidden (no billing or inactive).
+          {t('Showing {n} active rules — {m} hidden (no billing or inactive).', { n: digits(activeRules(rules).length), m: digits(hiddenCount) })}
         </p>
       )}
-      {loading && <p className="text-muted">Loading billing rules…</p>}
+      {loading && <p className="text-muted">{t('Loading billing rules…')}</p>}
       {loadError && <div className="alert alert-danger" role="alert">{loadError}</div>}
       {rules && (
         sorted.length === 0 && undatedSorted.length === 0 ? (
-          <p className="text-muted">{rules.length === 0 ? 'No billing rules on record.' : 'No active billing rules.'}</p>
+          <p className="text-muted">{rules.length === 0 ? t('No billing rules on record.') : t('No active billing rules.')}</p>
         ) : (
           <>
             {sorted.length === 0 ? (
-              <p className="text-muted">No rules due in this fiscal year.</p>
+              <p className="text-muted">{t('No rules due in this fiscal year.')}</p>
             ) : (
               <RuleTable rows={sorted} clientNames={clientNames} clientDomains={clientDomains} onIssueInvoice={onIssueInvoice} />
             )}
             {undatedSorted.length > 0 && (
               <>
-                <h4 className="h6 mt-4">No due date — active rules with no next due date</h4>
+                <h4 className="h6 mt-4">{t('No due date — active rules with no next due date')}</h4>
                 <p className="text-muted small">
-                  These rules have no next due date on record, so they cannot
-                  be placed in a fiscal year — they are listed here instead
-                  of being hidden.
+                  {t('These rules have no next due date on record, so they cannot be placed in a fiscal year — they are listed here instead of being hidden.')}
                 </p>
                 <RuleTable rows={undatedSorted} clientNames={clientNames} clientDomains={clientDomains} onIssueInvoice={onIssueInvoice} />
               </>

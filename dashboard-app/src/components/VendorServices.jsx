@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import MenuPicker from './MenuPicker';
-import { fieldErrors, friendlyError, money } from '../api.js';
+import { fieldErrors, friendlyError } from '../api.js';
+import { useLocale } from '../i18n.js';
 import { dateLabel } from '../dates.js';
 import { SortHeader, useTableSort } from '../sort.js';
 import { SUPPLIERS, SUPPLIER_OTHER } from '../suppliers.js';
@@ -98,6 +99,19 @@ function FieldError({ msg }) {
 }
 
 export default function VendorServices({ api, services, onWrote, fy, refreshKey, initialServices, initialInvoices }) {
+  const { t, money, digits } = useLocale();
+  /* The TDS label, localized — tdsLabel() itself stays English
+     (it is exported for the tests); the table renders this one. */
+  const tdsText = (service) => {
+    const amount = tdsAmountOf(service);
+    if (amount === null) return null;
+    return t('{rate}% of {amount} = {tds} — payable to {payee}', {
+      rate: digits(service.tds_rate),
+      amount: money(service.amount_npr),
+      tds: money(amount),
+      payee: service.tds_payee || '—',
+    });
+  };
   const rows = (initialServices || services || []).slice().sort(
     (a, b) => String(a.supplier).localeCompare(String(b.supplier)) || String(a.service).localeCompare(String(b.service)),
   );
@@ -186,10 +200,10 @@ export default function VendorServices({ api, services, onWrote, fy, refreshKey,
 
     const supplier = vsSupplier === SUPPLIER_OTHER ? vsSupplierOther.trim() : vsSupplier;
     const tdsRate = vsTdsRate === '' ? null : parseFloat(vsTdsRate);
-    if (!supplier) { setVsFormError('Pick a supplier first.'); return; }
-    if (!vsService.trim()) { setVsFormError('Enter the service.'); return; }
-    if (tdsRate !== null && !(tdsRate > 0)) { setVsFormError('Enter a TDS rate above 0, or leave it blank.'); return; }
-    if (tdsRate !== null && !vsTdsPayee.trim()) { setVsFormError('Say who the TDS is payable to.'); return; }
+    if (!supplier) { setVsFormError(t('Pick a supplier first.')); return; }
+    if (!vsService.trim()) { setVsFormError(t('Enter the service.')); return; }
+    if (tdsRate !== null && !(tdsRate > 0)) { setVsFormError(t('Enter a TDS rate above 0, or leave it blank.')); return; }
+    if (tdsRate !== null && !vsTdsPayee.trim()) { setVsFormError(t('Say who the TDS is payable to.')); return; }
 
     const payload = {
       supplier,
@@ -209,7 +223,7 @@ export default function VendorServices({ api, services, onWrote, fy, refreshKey,
     try {
       const resp = await api('/vendor-services', { method: 'POST', body: payload });
       const d = (resp && resp.data) || {};
-      setVsFormSuccess('Vendor service saved — ' + (d.supplier || supplier) + ' — ' + (d.service || vsService.trim()) + '.');
+      setVsFormSuccess(t('Vendor service saved — {supplier} — {service}.', { supplier: d.supplier || supplier, service: d.service || vsService.trim() }));
       setVsService('');
       setVsAmount('');
       setVsTdsRate('');
@@ -227,36 +241,32 @@ export default function VendorServices({ api, services, onWrote, fy, refreshKey,
 
   return (
     <div>
-      <h4>Vendor services</h4>
+      <h4>{t('Vendor services')}</h4>
       <p className="text-muted">
-        The services our suppliers provide, saved once so the Record
-        vendor bill form can pick them instead of typing a service
-        each time. Rent carries its 10% TDS — 1,540 a month on the
-        15,400 agreement rent, payable to KMC — marked on the record
-        here, not counted into TDS payable.
+        {t('The services our suppliers provide, saved once so the Record vendor bill form can pick them instead of typing a service each time. Rent carries its 10% TDS — 1,540 a month on the 15,400 agreement rent, payable to KMC — marked on the record here, not counted into TDS payable.')}
       </p>
       <p className="text-muted small">
         {effectiveFy === 'all'
-          ? 'Showing all years — the Bills column counts every bill recorded for each service.'
-          : 'Showing ' + effectiveFy + ' — the Bills column counts only the bills recorded for each service in ' + effectiveFy + '.'}
+          ? t('Showing all years — the Bills column counts every bill recorded for each service.')
+          : t('Showing {fy} — the Bills column counts only the bills recorded for each service in {fy}.', { fy: digits(effectiveFy) })}
       </p>
-      {invoicesLoading && <p className="text-muted">Loading bills…</p>}
+      {invoicesLoading && <p className="text-muted">{t('Loading bills…')}</p>}
       {invoicesError && <div className="alert alert-danger" role="alert">{invoicesError}</div>}
       {rows.length === 0 ? (
-        <p className="text-muted">No vendor services saved yet.</p>
+        <p className="text-muted">{t('No vendor services saved yet.')}</p>
       ) : (
         <>
           <table className="table table-sm">
             <thead>
               <tr>
-                <SortHeader label="Supplier" sortKey="supplier" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
-                <SortHeader label="Service" sortKey="service" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
-                <SortHeader label="Cycle" sortKey="cycle" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
-                <SortHeader label="Amount" sortKey="amount" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
-                <SortHeader label="VAT" sortKey="vat" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
-                <SortHeader label="TDS" sortKey="tds" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
-                <SortHeader label="Next due" sortKey="nextDue" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
-                <SortHeader label={'Bills' + (effectiveFy === 'all' ? '' : ' in ' + effectiveFy)} sortKey="bills" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} className="text-right" />
+                <SortHeader label={t('Supplier')} sortKey="supplier" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
+                <SortHeader label={t('Service')} sortKey="service" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
+                <SortHeader label={t('Cycle')} sortKey="cycle" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
+                <SortHeader label={t('Amount')} sortKey="amount" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
+                <SortHeader label={t('VAT')} sortKey="vat" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
+                <SortHeader label={t('TDS')} sortKey="tds" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
+                <SortHeader label={t('Next due')} sortKey="nextDue" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} />
+                <SortHeader label={effectiveFy === 'all' ? t('Bills') : t('Bills in {fy}', { fy: digits(effectiveFy) })} sortKey="bills" activeKey={sort.sortKey} dir={sort.sortDir} onSort={sort.onSort} className="text-right" />
               </tr>
             </thead>
             <tbody>
@@ -266,15 +276,15 @@ export default function VendorServices({ api, services, onWrote, fy, refreshKey,
                   <tr key={s.id}>
                     <td>{s.supplier}</td>
                     <td>{s.service}</td>
-                    <td>{CYCLE_LABELS[s.cycle] || s.cycle}</td>
-                    <td>{(s.amount_npr === null || s.amount_npr === undefined) ? '— varies' : money(s.amount_npr)}</td>
-                    <td>{s.vat_included ? '13% included' : 'No VAT'}</td>
-                    <td>{tdsLabel(s) || '—'}</td>
+                    <td>{t(CYCLE_LABELS[s.cycle] || s.cycle)}</td>
+                    <td>{(s.amount_npr === null || s.amount_npr === undefined) ? t('— varies') : money(s.amount_npr)}</td>
+                    <td>{s.vat_included ? t('13% included') : t('No VAT')}</td>
+                    <td>{tdsText(s) || '—'}</td>
                     <td>{s.next_due_ad ? dateLabel(s.next_due_ad) : '—'}</td>
                     <td className="text-right">
                       {a.count === 0
-                        ? 'No bills' + (effectiveFy === 'all' ? '' : ' in ' + effectiveFy)
-                        : a.count + ' bill' + (a.count === 1 ? '' : 's') + ' — ' + money(a.total)}
+                        ? (effectiveFy === 'all' ? t('No bills') : t('No bills in {fy}', { fy: digits(effectiveFy) }))
+                        : t(a.count === 1 ? '{n} bill' : '{n} bills', { n: digits(a.count) }) + ' — ' + money(a.total)}
                     </td>
                   </tr>
                 );
@@ -282,34 +292,32 @@ export default function VendorServices({ api, services, onWrote, fy, refreshKey,
             </tbody>
           </table>
           <p className="text-muted small">
-            Utility bills cover water, electricity and waste together on one
-            meter note, so the same bills appear under each utility service —
-            do not add the three rows together.
+            {t('Utility bills cover water, electricity and waste together on one meter note, so the same bills appear under each utility service — do not add the three rows together.')}
           </p>
         </>
       )}
 
       <div className="card mt-4">
         <div className="card-body">
-          <h5 className="card-title">Add a vendor service</h5>
+          <h5 className="card-title">{t('Add a vendor service')}</h5>
           <form onSubmit={createVendorService} noValidate>
             <div className="form-group">
-              <label>Supplier</label>
+              <label>{t('Supplier')}</label>
               <MenuPicker
-                buttonLabel={vsSupplier === SUPPLIER_OTHER ? 'Other — type a new supplier' : (vsSupplier || 'Pick a supplier…')}
-                options={[{ value: '', label: 'Pick a supplier…' }]
+                buttonLabel={vsSupplier === SUPPLIER_OTHER ? t('Other — type a new supplier') : (vsSupplier || t('Pick a supplier…'))}
+                options={[{ value: '', label: t('Pick a supplier…') }]
                   .concat(SUPPLIERS.map((s) => ({ value: s, label: s })))
-                  .concat([{ value: SUPPLIER_OTHER, label: 'Other — type a new supplier' }])}
+                  .concat([{ value: SUPPLIER_OTHER, label: t('Other — type a new supplier') }])}
                 open={openPicker === 'vsSupplier'}
                 onToggle={() => setOpenPicker(openPicker === 'vsSupplier' ? null : 'vsSupplier')}
                 onPick={(v) => { setVsSupplier(v); setOpenPicker(null); }}
-                ariaLabel="Supplier"
+                ariaLabel={t('Supplier')}
               />
               {vsSupplier === SUPPLIER_OTHER && (
                 <input
                   className="form-control mt-2"
                   type="text"
-                  placeholder="Supplier name"
+                  placeholder={t('Supplier name')}
                   maxLength="255"
                   value={vsSupplierOther}
                   onChange={(e) => setVsSupplierOther(e.target.value)}
@@ -318,12 +326,12 @@ export default function VendorServices({ api, services, onWrote, fy, refreshKey,
               <FieldError msg={vsErrors.supplier && vsErrors.supplier.join(' ')} />
             </div>
             <div className="form-group">
-              <label htmlFor="vsService">Service</label>
+              <label htmlFor="vsService">{t('Service')}</label>
               <input
                 id="vsService"
                 className="form-control"
                 type="text"
-                placeholder="e.g. Rent — office premises (Ward 2)"
+                placeholder={t('e.g. Rent — office premises (Ward 2)')}
                 maxLength="1000"
                 value={vsService}
                 onChange={(e) => setVsService(e.target.value)}
@@ -332,7 +340,7 @@ export default function VendorServices({ api, services, onWrote, fy, refreshKey,
             </div>
             <div className="form-row">
               <div className="form-group col-md-6">
-                <label htmlFor="vsAmount">Amount (NPR) — blank when it varies</label>
+                <label htmlFor="vsAmount">{t('Amount (NPR) — blank when it varies')}</label>
                 <input
                   id="vsAmount"
                   className="form-control"
@@ -346,34 +354,34 @@ export default function VendorServices({ api, services, onWrote, fy, refreshKey,
                 <FieldError msg={vsErrors.amount_npr && vsErrors.amount_npr.join(' ')} />
               </div>
               <div className="form-group col-md-6">
-                <label>Cycle</label>
+                <label>{t('Cycle')}</label>
                 <MenuPicker
-                  buttonLabel={CYCLE_LABELS[vsCycle] || vsCycle}
-                  options={VENDOR_SERVICE_CYCLES.map((c) => ({ value: c, label: CYCLE_LABELS[c] }))}
+                  buttonLabel={t(CYCLE_LABELS[vsCycle] || vsCycle)}
+                  options={VENDOR_SERVICE_CYCLES.map((c) => ({ value: c, label: t(CYCLE_LABELS[c]) }))}
                   open={openPicker === 'vsCycle'}
                   onToggle={() => setOpenPicker(openPicker === 'vsCycle' ? null : 'vsCycle')}
                   onPick={(v) => { setVsCycle(v); setOpenPicker(null); }}
-                  ariaLabel="Cycle"
+                  ariaLabel={t('Cycle')}
                 />
               </div>
             </div>
             <div className="form-row">
               <div className="form-group col-md-6">
-                <label>Amount includes 13% VAT?</label>
+                <label>{t('Amount includes 13% VAT?')}</label>
                 <MenuPicker
-                  buttonLabel={vsVatIncluded === 'yes' ? 'Yes — 13% included' : 'No'}
+                  buttonLabel={vsVatIncluded === 'yes' ? t('Yes — 13% included') : t('No')}
                   options={[
-                    { value: 'yes', label: 'Yes — 13% included' },
-                    { value: 'no', label: 'No' },
+                    { value: 'yes', label: t('Yes — 13% included') },
+                    { value: 'no', label: t('No') },
                   ]}
                   open={openPicker === 'vsVatIncluded'}
                   onToggle={() => setOpenPicker(openPicker === 'vsVatIncluded' ? null : 'vsVatIncluded')}
                   onPick={(v) => { setVsVatIncluded(v); setOpenPicker(null); }}
-                  ariaLabel="Amount includes 13% VAT?"
+                  ariaLabel={t('Amount includes 13% VAT?')}
                 />
               </div>
               <div className="form-group col-md-6">
-                <label htmlFor="vsTdsRate">TDS rate % (optional)</label>
+                <label htmlFor="vsTdsRate">{t('TDS rate % (optional)')}</label>
                 <input
                   id="vsTdsRate"
                   className="form-control"
@@ -390,7 +398,7 @@ export default function VendorServices({ api, services, onWrote, fy, refreshKey,
             </div>
             {vsTdsRate !== '' && (
               <div className="form-group">
-                <label htmlFor="vsTdsPayee">TDS payable to</label>
+                <label htmlFor="vsTdsPayee">{t('TDS payable to')}</label>
                 <input
                   id="vsTdsPayee"
                   className="form-control"
@@ -401,12 +409,12 @@ export default function VendorServices({ api, services, onWrote, fy, refreshKey,
                   onChange={(e) => setVsTdsPayee(e.target.value)}
                 />
                 <FieldError msg={vsErrors.tds_payee && vsErrors.tds_payee.join(' ')} />
-                <small className="form-text text-muted">Marked on the record only — it is not counted into TDS payable.</small>
+                <small className="form-text text-muted">{t('Marked on the record only — it is not counted into TDS payable.')}</small>
               </div>
             )}
             <div className="form-row">
               <div className="form-group col-md-6">
-                <label htmlFor="vsNextDue">Next due (optional)</label>
+                <label htmlFor="vsNextDue">{t('Next due (optional)')}</label>
                 <input
                   id="vsNextDue"
                   className="form-control"
@@ -416,7 +424,7 @@ export default function VendorServices({ api, services, onWrote, fy, refreshKey,
                 />
               </div>
               <div className="form-group col-md-6">
-                <label htmlFor="vsNotes">Notes (optional)</label>
+                <label htmlFor="vsNotes">{t('Notes (optional)')}</label>
                 <input
                   id="vsNotes"
                   className="form-control"
@@ -430,7 +438,7 @@ export default function VendorServices({ api, services, onWrote, fy, refreshKey,
             {vsFormError && <div className="alert alert-danger" role="alert">{vsFormError}</div>}
             {vsFormSuccess && <div className="alert alert-success" role="alert">{vsFormSuccess}</div>}
             <button className="btn btn-primary" type="submit" disabled={vsSubmitting}>
-              Save vendor service
+              {t('Save vendor service')}
             </button>
           </form>
         </div>

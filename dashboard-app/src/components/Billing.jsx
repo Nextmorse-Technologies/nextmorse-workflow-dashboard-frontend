@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import MenuPicker from './MenuPicker';
-import { tdsLabel, servicesForSupplier } from './VendorServices';
+import { tdsAmountOf, servicesForSupplier } from './VendorServices';
 import { SUPPLIERS, SUPPLIER_OTHER } from '../suppliers.js';
 export { SUPPLIERS, SUPPLIER_OTHER } from '../suppliers.js';
 import {
@@ -8,8 +8,9 @@ import {
   TREATMENT_LABELS,
   fieldErrors,
   friendlyError,
-  money,
+  money as moneyEn,
 } from '../api.js';
+import { useLocale } from '../i18n.js';
 
 function FieldError({ msg }) {
   return msg ? <small className="form-text text-danger">{msg}</small> : null;
@@ -128,7 +129,7 @@ export function servicePickerOptions({ rules }) {
   (rules || []).forEach((r) => options.push({
     value: String(r.id),
     label: r.service + (r.amount_npr !== null && r.amount_npr !== undefined
-      ? ' — ' + money(r.amount_npr)
+      ? ' — ' + moneyEn(r.amount_npr)
       : ''),
   }));
   options.push({ value: SERVICE_ATTACH, label: 'Attach an existing service or AMC…' });
@@ -200,12 +201,35 @@ export function joinInvoiceLines(lines) {
     const amount = parseFloat(l.amount);
     if (!service && !(amount > 0)) continue;
     if (amount > 0) total += amount;
-    parts.push(amount > 0 ? service + ' (' + money(amount) + ')' : service);
+    parts.push(amount > 0 ? service + ' (' + moneyEn(amount) + ')' : service);
   }
   return { service: parts.join(' + '), amount: Math.round(total * 100) / 100 };
 }
 
 export default function Billing({ api, clients, openInvoices, meta, onWrote, prefill, onPrefillApplied, vendorRefresh, vendorServices, fy, initialVendorBills, initialOpenPicker }) {
+  const { t, money, digits } = useLocale();
+  /* The payment-recorded message, with only the parts the API
+     actually returned — the invoice link and the receipt number
+     are both optional. */
+  function paymentSuccessLine({ amount, linked, receiptId, vendor }) {
+    const base = { amount: money(amount) };
+    if (linked && receiptId) {
+      return t(vendor
+        ? 'Payment of {amount} recorded against vendor bill {invoice} (receipt #{receipt}).'
+        : 'Payment of {amount} recorded against invoice {invoice} (receipt #{receipt}).',
+        { ...base, invoice: linked, receipt: digits(receiptId) });
+    }
+    if (linked) {
+      return t(vendor
+        ? 'Payment of {amount} recorded against vendor bill {invoice}.'
+        : 'Payment of {amount} recorded against invoice {invoice}.',
+        { ...base, invoice: linked });
+    }
+    if (receiptId) {
+      return t('Payment of {amount} recorded (receipt #{receipt}).', { ...base, receipt: digits(receiptId) });
+    }
+    return t('Payment of {amount} recorded.', base);
+  }
   const [invClient, setInvClient] = useState('');
   /* Which custom picker is open ('client', 'service-<key>',
      'attach-<key>', 'treatment', 'payInvoice', 'vbSupplier',
@@ -286,6 +310,16 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
     : [];
   const vbPickedService = vbServiceId && vbServiceId !== '__other'
     ? (vendorServices || []).find((s) => String(s.id) === String(vbServiceId)) || null
+    : null;
+  /* The picked service's TDS, localized: tdsLabel() formats in
+     English for the tests, so the sentence is rebuilt here. */
+  const vbTdsText = vbPickedService && tdsAmountOf(vbPickedService) !== null
+    ? t('{rate}% of {amount} = {tds} — payable to {payee}', {
+      rate: digits(vbPickedService.tds_rate),
+      amount: money(vbPickedService.amount_npr),
+      tds: money(tdsAmountOf(vbPickedService)),
+      payee: vbPickedService.tds_payee,
+    })
     : null;
 
   /* Pick a saved service: its amount and VAT fill in. The TDS is a
@@ -441,12 +475,12 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
   function attachSelectFor(key) {
     return (
       <MenuPicker
-        buttonLabel="Attach an existing service or AMC…"
+        buttonLabel={t('Attach an existing service or AMC…')}
         options={attachOptions.map((o) => ({ value: String(o.id), label: o.label }))}
         open={openPicker === 'attach-' + key}
         onToggle={() => setOpenPicker(openPicker === 'attach-' + key ? null : 'attach-' + key)}
         onPick={(v) => { if (v) handleLineAttach(key, v); setOpenPicker(null); }}
-        emptyText="No existing services could be loaded."
+        emptyText={t('No existing services could be loaded.')}
         ariaLabel="Attach an existing service or AMC"
       />
     );
@@ -627,19 +661,19 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
     setInvFormSuccess('');
     setInvErrors({});
 
-    if (!invClient) { setInvFormError('Pick a client first.'); return; }
+    if (!invClient) { setInvFormError(t('Pick a client first.')); return; }
     /* Empty lines are skipped; a line with a service but no amount,
        or an amount but no service, blocks the save. */
     const activeLines = (invLines || []).filter((l) => (l.service || '').trim() || (l.amount || '').trim());
-    if (activeLines.length === 0) { setInvFormError('Add at least one service.'); return; }
+    if (activeLines.length === 0) { setInvFormError(t('Add at least one service.')); return; }
     for (const l of activeLines) {
-      if (!(l.service || '').trim()) { setInvFormError('Enter a service for each line.'); return; }
-      if (!(parseFloat(l.amount) > 0)) { setInvFormError('Enter an amount above 0 for each service.'); return; }
+      if (!(l.service || '').trim()) { setInvFormError(t('Enter a service for each line.')); return; }
+      if (!(parseFloat(l.amount) > 0)) { setInvFormError(t('Enter an amount above 0 for each service.')); return; }
     }
     const joined = joinInvoiceLines(activeLines);
-    if (!joined.amount || !(joined.amount > 0)) { setInvFormError('Enter an amount above 0.'); return; }
-    if (joined.service.length > 1000) { setInvFormError('The combined service text is too long — shorten a service.'); return; }
-    if (!invDate) { setInvFormError('Pick an issue date.'); return; }
+    if (!joined.amount || !(joined.amount > 0)) { setInvFormError(t('Enter an amount above 0.')); return; }
+    if (joined.service.length > 1000) { setInvFormError(t('The combined service text is too long — shorten a service.')); return; }
+    if (!invDate) { setInvFormError(t('Pick an issue date.')); return; }
 
     const payload = {
       client_id: parseInt(invClient, 10),
@@ -657,18 +691,24 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
       const resp = await api('/invoices', { method: 'POST', body: payload });
       const d = (resp && resp.data) || {};
       const lines = [
-        'Invoice ' + (d.invoice_number || ('#' + d.id)) + ' created — ' +
-        money(d.amount_npr) + ' (' + (d.treatment_label || d.treatment || '') + ').',
+        t('Invoice {number} created — {amount} ({treatment}).', {
+          number: d.invoice_number || ('#' + d.id),
+          amount: money(d.amount_npr),
+          treatment: t(TREATMENT_LABELS[d.treatment] || d.treatment_label || d.treatment || ''),
+        }),
       ];
       if (d.vat_npr !== undefined || d.tds_npr !== undefined) {
-        lines.push('VAT ' + money(d.vat_npr) + ' · TDS ' + money(d.tds_npr) +
-          ' · subtotal ' + money(d.subtotal_npr) + '.');
+        lines.push(t('VAT {vat} · TDS {tds} · subtotal {subtotal}.', {
+          vat: money(d.vat_npr),
+          tds: money(d.tds_npr),
+          subtotal: money(d.subtotal_npr),
+        }));
       }
       if (d.tax_invoice_issued) {
-        lines.push('Tax invoice issued (' + d.tax_invoice_issued + ').');
+        lines.push(t('Tax invoice issued ({number}).', { number: d.tax_invoice_issued }));
       }
       if (resp && resp.meta && resp.meta.pan_warning) {
-        lines.push('Warning: ' + resp.meta.pan_warning);
+        lines.push(t('Warning: {text}', { text: resp.meta.pan_warning }));
       }
       setInvFormSuccess(lines.join(' '));
       setOpenPicker(null);
@@ -693,15 +733,16 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
 
     const inv = selectedOpenInvoice;
     const amount = parseFloat(payAmount);
-    if (!inv) { setPayFormError('Pick an open invoice first.'); return; }
-    if (!(amount > 0)) { setPayFormError('Enter an amount above 0.'); return; }
+    if (!inv) { setPayFormError(t('Pick an open invoice first.')); return; }
+    if (!(amount > 0)) { setPayFormError(t('Enter an amount above 0.')); return; }
     if (inv.remaining_amount_npr !== undefined && inv.remaining_amount_npr !== null &&
         amount > Number(inv.remaining_amount_npr)) {
-      setPayFormError('The payment exceeds the ' +
-        money(inv.remaining_amount_npr) + ' still owed on this invoice.');
+      setPayFormError(t('The payment exceeds the {amount} still owed on this invoice.', {
+        amount: money(inv.remaining_amount_npr),
+      }));
       return;
     }
-    if (!payDate) { setPayFormError('Pick a payment date.'); return; }
+    if (!payDate) { setPayFormError(t('Pick a payment date.')); return; }
 
     const payload = {
       invoice_id: inv.id,
@@ -717,14 +758,14 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
       const d = (resp && resp.data) || {};
       const metaInv = (resp && resp.meta && resp.meta.invoice) || {};
       const lines = [
-        'Payment of ' + money(d.amount_npr || amount) + ' recorded' +
-        (d.linked_invoice ? (' against invoice ' + d.linked_invoice) : '') +
-        (d.id ? (' (receipt #' + d.id + ')') : '') + '.',
+        paymentSuccessLine({ amount: d.amount_npr || amount, linked: d.linked_invoice, receiptId: d.id }),
       ];
       if (metaInv.invoice_number) {
-        lines.push('Invoice ' + metaInv.invoice_number + ' is now ' +
-          (metaInv.status || '') + ' — ' + money(metaInv.remaining_amount_npr) +
-          ' still to receive.');
+        lines.push(t('Invoice {number} is now {status} — {amount} still to receive.', {
+          number: metaInv.invoice_number,
+          status: t(metaInv.status || ''),
+          amount: money(metaInv.remaining_amount_npr),
+        }));
       }
       setPayFormSuccess(lines.join(' '));
       /* A fully paid invoice drops off the open list — clear the pick,
@@ -750,10 +791,10 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
 
     const supplier = vbSupplier === SUPPLIER_OTHER ? vbSupplierOther.trim() : vbSupplier;
     const amount = parseFloat(vbAmount);
-    if (!supplier) { setVbFormError('Pick a supplier first.'); return; }
-    if (!vbService.trim()) { setVbFormError('Enter the service or item.'); return; }
-    if (!(amount > 0)) { setVbFormError('Enter an amount above 0.'); return; }
-    if (!vbDate) { setVbFormError('Pick a bill date.'); return; }
+    if (!supplier) { setVbFormError(t('Pick a supplier first.')); return; }
+    if (!vbService.trim()) { setVbFormError(t('Enter the service or item.')); return; }
+    if (!(amount > 0)) { setVbFormError(t('Enter an amount above 0.')); return; }
+    if (!vbDate) { setVbFormError(t('Pick a bill date.')); return; }
 
     const payload = vendorBillPayload({
       supplier,
@@ -772,15 +813,24 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
       const d = (resp && resp.data) || {};
       const meta = (resp && resp.meta) || {};
       const lines = [
-        'Vendor bill recorded — ' + (d.client_name || supplier) +
-        (d.invoice_number ? ' (bill No. ' + d.invoice_number + ')' : '') +
-        ' — ' + money(d.amount_npr || amount) + '.',
+        d.invoice_number
+          ? t('Vendor bill recorded — {supplier} (bill No. {number}) — {amount}.', {
+            supplier: d.client_name || supplier,
+            number: d.invoice_number,
+            amount: money(d.amount_npr || amount),
+          })
+          : t('Vendor bill recorded — {supplier} — {amount}.', {
+            supplier: d.client_name || supplier,
+            amount: money(d.amount_npr || amount),
+          }),
       ];
       if (meta.vat_npr !== undefined) {
-        lines.push('VAT ' + money(meta.vat_npr) + ' included · subtotal ' +
-          money(meta.subtotal_npr) + '.');
+        lines.push(t('VAT {vat} included · subtotal {subtotal}.', {
+          vat: money(meta.vat_npr),
+          subtotal: money(meta.subtotal_npr),
+        }));
       }
-      lines.push('It is Open — pay it from Record vendor receipt, or see it on the Vendor bills tab.');
+      lines.push(t('It is Open — pay it from Record vendor receipt, or see it on the Vendor bills tab.'));
       setVbFormSuccess(lines.join(' '));
       setVbService('');
       setVbServiceId('');
@@ -805,15 +855,16 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
 
     const bill = selectedVendorBill;
     const amount = parseFloat(vrAmount);
-    if (!bill) { setVrFormError('Pick an open vendor bill first.'); return; }
-    if (!(amount > 0)) { setVrFormError('Enter an amount above 0.'); return; }
+    if (!bill) { setVrFormError(t('Pick an open vendor bill first.')); return; }
+    if (!(amount > 0)) { setVrFormError(t('Enter an amount above 0.')); return; }
     if (bill.remaining_amount_npr !== undefined && bill.remaining_amount_npr !== null &&
         amount > Number(bill.remaining_amount_npr)) {
-      setVrFormError('The payment exceeds the ' +
-        money(bill.remaining_amount_npr) + ' still to pay on this bill.');
+      setVrFormError(t('The payment exceeds the {amount} still to pay on this bill.', {
+        amount: money(bill.remaining_amount_npr),
+      }));
       return;
     }
-    if (!vrDate) { setVrFormError('Pick a payment date.'); return; }
+    if (!vrDate) { setVrFormError(t('Pick a payment date.')); return; }
 
     const payload = {
       invoice_id: bill.id,
@@ -829,14 +880,14 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
       const d = (resp && resp.data) || {};
       const metaInv = (resp && resp.meta && resp.meta.invoice) || {};
       const lines = [
-        'Payment of ' + money(d.amount_npr || amount) + ' recorded' +
-        (d.linked_invoice ? (' against vendor bill ' + d.linked_invoice) : '') +
-        (d.id ? (' (receipt #' + d.id + ')') : '') + '.',
+        paymentSuccessLine({ amount: d.amount_npr || amount, linked: d.linked_invoice, receiptId: d.id, vendor: true }),
       ];
       if (metaInv.invoice_number) {
-        lines.push('Bill ' + metaInv.invoice_number + ' is now ' +
-          (metaInv.status || '') + ' — ' + money(metaInv.remaining_amount_npr) +
-          ' still to pay.');
+        lines.push(t('Bill {number} is now {status} — {amount} still to pay.', {
+          number: metaInv.invoice_number,
+          status: t(metaInv.status || ''),
+          amount: money(metaInv.remaining_amount_npr),
+        }));
       }
       setVrFormSuccess(lines.join(' '));
       /* A fully paid bill drops off the open list — clear the pick, or
@@ -860,34 +911,38 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
         <div className="col-lg-6 mb-4">
           <div className="card h-100">
             <div className="card-body">
-              <h5 className="card-title">Create invoice</h5>
+              <h5 className="card-title">{t('Create invoice')}</h5>
               <p className="text-muted small">
-                Pick a client — their services and amounts fill in from
-                their billing rules. Add as many services as the invoice
-                needs; the total is the sum. The API numbers the invoice,
-                works out the fiscal year and the VAT/TDS split, and marks
-                tax invoices.
+                {t('Pick a client — their services and amounts fill in from their billing rules. Add as many services as the invoice needs; the total is the sum. The API numbers the invoice, works out the fiscal year and the VAT/TDS split, and marks tax invoices.')}
               </p>
               <form onSubmit={createInvoice} noValidate>
                 <div className="form-group">
-                  <label>Client</label>
+                  <label>{t('Client')}</label>
                   <MenuPicker
-                    buttonLabel={pickedClientName || 'Pick a client…'}
-                    options={clientPickerOptions({ activeClients, prefillClient, invClient })}
+                    buttonLabel={pickedClientName || t('Pick a client…')}
+                    options={clientPickerOptions({ activeClients, prefillClient, invClient }).map((o) => (
+                      o.value === '' ? { ...o, label: t('Pick a client…') } : o
+                    ))}
                     open={openPicker === 'client'}
                     onToggle={() => setOpenPicker(openPicker === 'client' ? null : 'client')}
                     onPick={(v) => { setPrefillClient(null); handleClientChange(v); setOpenPicker(null); }}
-                    emptyText="No active clients"
+                    emptyText={t('No active clients')}
                     ariaLabel="Client"
                   />
                   <FieldError msg={invErrors.client_id && invErrors.client_id.join(' ')} />
                 </div>
                 <div className="form-group">
-                  <label>Services</label>
+                  <label>{t('Services')}</label>
                   {invLines.map((line) => {
                     const mode = serviceFieldMode({ hasClient: !!invClient, rulesLoading, rules, selectedRule: line.selectedRule });
-                    const serviceOptions = servicePickerOptions({ rules });
-                    const pickedServiceLabel = serviceOptions.find((o) => o.value === String(line.selectedRule))?.label || 'Pick a service…';
+                    const serviceOptions = servicePickerOptions({ rules }).map((o) => {
+                      if (o.value === '') return { ...o, label: t('Pick a service…') };
+                      if (o.value === SERVICE_ATTACH) return { ...o, label: t('Attach an existing service or AMC…') };
+                      if (o.value === SERVICE_OTHER) return { ...o, label: t('Other — type a new service') };
+                      const r = rules.find((x) => String(x.id) === o.value);
+                      return r ? { ...o, label: r.service + (r.amount_npr !== null && r.amount_npr !== undefined ? ' — ' + money(r.amount_npr) : '') } : o;
+                    });
+                    const pickedServiceLabel = serviceOptions.find((o) => o.value === String(line.selectedRule))?.label || t('Pick a service…');
                     return (
                       <div key={line.key} className="form-row align-items-start mb-2">
                         <div className="col-md-8">
@@ -895,7 +950,7 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
                             <input
                               className="form-control"
                               type="text"
-                              placeholder="Loading services…"
+                              placeholder={t('Loading services…')}
                               disabled
                               value=""
                               readOnly
@@ -915,7 +970,7 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
                                 <input
                                   className="form-control"
                                   type="text"
-                                  placeholder="Loading services…"
+                                  placeholder={t('Loading services…')}
                                   disabled
                                   value=""
                                   readOnly
@@ -924,13 +979,13 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
                                 attachSelectFor(line.key)
                               ) : (
                                 <small className="form-text text-muted">
-                                  No existing services could be loaded.{' '}
+                                  {t('No existing services could be loaded.')}{' '}
                                   <button
                                     type="button"
                                     className="btn btn-link btn-sm p-0 align-baseline"
                                     onClick={() => handleLineRuleChange(line.key, '')}
                                   >
-                                    Back to services
+                                    {t('Back to services')}
                                   </button>
                                 </small>
                               )}
@@ -942,8 +997,8 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
                                 className="form-control"
                                 type="text"
                                 placeholder={invClient
-                                  ? 'e.g. Hosting renewal — example.com'
-                                  : 'Pick a client first'}
+                                  ? t('e.g. Hosting renewal — example.com')
+                                  : t('Pick a client first')}
                                 maxLength="1000"
                                 disabled={!invClient}
                                 value={line.service}
@@ -953,13 +1008,13 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
                           )}
                           {showTypedServiceNote({ hasClient: !!invClient, rules, selectedRule: line.selectedRule, serviceAttached: line.serviceAttached }) && (
                             <small className="form-text text-muted">
-                              A new service, not one of the listed rules.{' '}
+                              {t('A new service, not one of the listed rules.')}{' '}
                               <button
                                 type="button"
                                 className="btn btn-link btn-sm p-0 align-baseline"
                                 onClick={() => handleLineRuleChange(line.key, '')}
                               >
-                                Back to services
+                                {t('Back to services')}
                               </button>
                             </small>
                           )}
@@ -971,14 +1026,13 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
                             min="0.01"
                             step="0.01"
                             placeholder="0.00"
-                            aria-label="Amount (NPR)"
+                            aria-label={t('Amount (NPR)')}
                             value={line.amount}
                             onChange={(e) => updateLine(line.key, { amount: e.target.value })}
                           />
                           {showRuleFilledNote({ selectedRule: line.selectedRule, serviceAttached: line.serviceAttached }) && (
                             <small className="form-text text-muted">
-                              Filled from the billing rule — change it if this
-                              invoice differs.
+                              {t('Filled from the billing rule — change it if this invoice differs.')}
                             </small>
                           )}
                         </div>
@@ -988,7 +1042,7 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
                               type="button"
                               className="btn btn-outline-danger btn-sm"
                               onClick={() => removeInvoiceLine(line.key)}
-                              aria-label="Remove this service"
+                              aria-label={t('Remove this service')}
                             >
                               ×
                             </button>
@@ -1000,15 +1054,15 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
                   {invClient && !rulesLoading && rules.length === 0 && (
                     <small className="form-text text-muted">
                       {attachOptions.length > 0
-                        ? 'No services on file for this client — type a new service, or attach an existing one above.'
-                        : 'No services on file for this client — type the service.'}
+                        ? t('No services on file for this client — type a new service, or attach an existing one above.')
+                        : t('No services on file for this client — type the service.')}
                     </small>
                   )}
                   <button type="button" className="btn btn-outline-secondary btn-sm mt-1" onClick={addInvoiceLine}>
-                    + Add another service
+                    {t('+ Add another service')}
                   </button>
                   <p className="text-muted small mt-2 mb-0">
-                    Total: <strong>{money(joinInvoiceLines(invLines).amount)}</strong>
+                    {t('Total')}: <strong>{money(joinInvoiceLines(invLines).amount)}</strong>
                   </p>
                   {rulesError && (
                     <small className="form-text text-danger">{rulesError}</small>
@@ -1017,10 +1071,10 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
                   <FieldError msg={invErrors.amount_npr && invErrors.amount_npr.join(' ')} />
                 </div>
                 <div className="form-group">
-                  <label>Treatment</label>
+                  <label>{t('Treatment')}</label>
                   <MenuPicker
-                    buttonLabel={TREATMENT_LABELS[invTreatment] || invTreatment}
-                    options={treatments.map((t) => ({ value: t, label: TREATMENT_LABELS[t] || t }))}
+                    buttonLabel={t(TREATMENT_LABELS[invTreatment] || invTreatment)}
+                    options={treatments.map((code) => ({ value: code, label: t(TREATMENT_LABELS[code] || code) }))}
                     open={openPicker === 'treatment'}
                     onToggle={() => setOpenPicker(openPicker === 'treatment' ? null : 'treatment')}
                     onPick={(v) => { setInvTreatment(v); setOpenPicker(null); }}
@@ -1028,16 +1082,14 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
                   />
                   {mixedTreatments && (
                     <small className="form-text text-muted">
-                      These services have different treatments — the invoice
-                      uses {TREATMENT_LABELS[invTreatment] || invTreatment}.
-                      Change it if needed.
+                      {t('These services have different treatments — the invoice uses {treatment}. Change it if needed.', { treatment: t(TREATMENT_LABELS[invTreatment] || invTreatment) })}
                     </small>
                   )}
                   <FieldError msg={invErrors.treatment && invErrors.treatment.join(' ')} />
                 </div>
                 <div className="form-row">
                   <div className="form-group col-md-6">
-                    <label htmlFor="invDate">Issue date</label>
+                    <label htmlFor="invDate">{t('Issue date')}</label>
                     <input
                       id="invDate"
                       className="form-control"
@@ -1048,7 +1100,7 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
                     <FieldError msg={invErrors.date_ad && invErrors.date_ad.join(' ')} />
                   </div>
                   <div className="form-group col-md-6">
-                    <label htmlFor="invDueDate">Due date (optional)</label>
+                    <label htmlFor="invDueDate">{t('Due date (optional)')}</label>
                     <input
                       id="invDueDate"
                       className="form-control"
@@ -1060,7 +1112,7 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
                   </div>
                 </div>
                 <div className="form-group">
-                  <label htmlFor="invDomain">Domain (optional)</label>
+                  <label htmlFor="invDomain">{t('Domain (optional)')}</label>
                   <input
                     id="invDomain"
                     className="form-control"
@@ -1073,7 +1125,7 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
                   <FieldError msg={invErrors.domain && invErrors.domain.join(' ')} />
                 </div>
                 <div className="form-group">
-                  <label htmlFor="invNotes">Notes (optional)</label>
+                  <label htmlFor="invNotes">{t('Notes (optional)')}</label>
                   <textarea
                     id="invNotes"
                     className="form-control"
@@ -1087,7 +1139,7 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
                 {invFormError && <div className="alert alert-danger" role="alert">{invFormError}</div>}
                 {invFormSuccess && <div className="alert alert-success" role="alert">{invFormSuccess}</div>}
                 <button className="btn btn-primary" type="submit" disabled={invSubmitting}>
-                  Create invoice
+                  {t('Create invoice')}
                 </button>
               </form>
             </div>
@@ -1096,26 +1148,25 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
         <div className="col-lg-6 mb-4">
           <div className="card h-100">
             <div className="card-body">
-              <h5 className="card-title">Record payment</h5>
+              <h5 className="card-title">{t('Record payment')}</h5>
               <p className="text-muted small">
-                Records a payment against an open invoice. The amount cannot be
-                more than what is still to receive.
+                {t('Records a payment against an open invoice. The amount cannot be more than what is still to receive.')}
               </p>
               <form onSubmit={recordPayment} noValidate>
                 <div className="form-group">
-                  <label>Open invoice</label>
+                  <label>{t('Open invoice')}</label>
                   <MenuPicker
                     buttonLabel={selectedOpenInvoice
                       ? selectedOpenInvoice.invoice_number + ' — ' + selectedOpenInvoice.client_name +
-                        ' — remaining ' + money(selectedOpenInvoice.remaining_amount_npr)
-                      : 'Pick an open invoice…'}
+                        ' — ' + t('remaining {amount}', { amount: money(selectedOpenInvoice.remaining_amount_npr) })
+                      : t('Pick an open invoice…')}
                     options={receivable.length
-                      ? [{ value: '', label: 'Pick an open invoice…' }].concat(receivable.map((inv) => ({
+                      ? [{ value: '', label: t('Pick an open invoice…') }].concat(receivable.map((inv) => ({
                           value: String(inv.id),
                           label: inv.invoice_number + ' — ' + inv.client_name +
-                            ' — remaining ' + money(inv.remaining_amount_npr),
+                            ' — ' + t('remaining {amount}', { amount: money(inv.remaining_amount_npr) }),
                         })))
-                      : [{ value: '', label: effectiveFy === 'all' ? 'No open invoices' : 'No open invoices in ' + effectiveFy }]}
+                      : [{ value: '', label: effectiveFy === 'all' ? t('No open invoices') : t('No open invoices in {fy}', { fy: digits(effectiveFy) }) }]}
                     open={openPicker === 'payInvoice'}
                     onToggle={() => setOpenPicker(openPicker === 'payInvoice' ? null : 'payInvoice')}
                     onPick={(v) => { setPayInvoiceId(v); setOpenPicker(null); }}
@@ -1123,21 +1174,22 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
                   />
                   {effectiveFy !== 'all' && (
                     <small className="form-text text-muted">
-                      Only {effectiveFy} invoices are listed — change the Fiscal year picker to see other years.
+                      {t('Only {fy} invoices are listed — change the Fiscal year picker to see other years.', { fy: digits(effectiveFy) })}
                     </small>
                   )}
                   <small className="form-text text-muted">
                     {selectedOpenInvoice
-                      ? 'Still to receive on this invoice: ' +
-                        money(selectedOpenInvoice.remaining_amount_npr) +
-                        ' · issued ' + (selectedOpenInvoice.date_ad || '—')
+                      ? t('Still to receive on this invoice: {amount} · issued {date}', {
+                        amount: money(selectedOpenInvoice.remaining_amount_npr),
+                        date: selectedOpenInvoice.date_ad || '—',
+                      })
                       : ''}
                   </small>
                   <FieldError msg={payErrors.invoice_id && payErrors.invoice_id.join(' ')} />
                 </div>
                 <div className="form-row">
                   <div className="form-group col-md-6">
-                    <label htmlFor="payAmount">Amount (NPR)</label>
+                    <label htmlFor="payAmount">{t('Amount (NPR)')}</label>
                     <input
                       id="payAmount"
                       className="form-control"
@@ -1151,7 +1203,7 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
                     <FieldError msg={payErrors.amount_npr && payErrors.amount_npr.join(' ')} />
                   </div>
                   <div className="form-group col-md-6">
-                    <label htmlFor="payDate">Payment date</label>
+                    <label htmlFor="payDate">{t('Payment date')}</label>
                     <input
                       id="payDate"
                       className="form-control"
@@ -1163,12 +1215,12 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
                   </div>
                 </div>
                 <div className="form-group">
-                  <label htmlFor="payTxnRef">Transaction ref (optional)</label>
+                  <label htmlFor="payTxnRef">{t('Transaction ref (optional)')}</label>
                   <input
                     id="payTxnRef"
                     className="form-control"
                     type="text"
-                    placeholder="e.g. cheque no. or transfer ref"
+                    placeholder={t('e.g. cheque no. or transfer ref')}
                     maxLength="255"
                     value={payTxnRef}
                     onChange={(e) => setPayTxnRef(e.target.value)}
@@ -1176,12 +1228,12 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
                   <FieldError msg={payErrors.txn_ref && payErrors.txn_ref.join(' ')} />
                 </div>
                 <div className="form-group">
-                  <label htmlFor="payReceiptNo">Receipt number (optional)</label>
+                  <label htmlFor="payReceiptNo">{t('Receipt number (optional)')}</label>
                   <input
                     id="payReceiptNo"
                     className="form-control"
                     type="text"
-                    placeholder="Leave empty for the next number"
+                    placeholder={t('Leave empty for the next number')}
                     maxLength="50"
                     value={payReceiptNo}
                     onChange={(e) => setPayReceiptNo(e.target.value)}
@@ -1191,7 +1243,7 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
                 {payFormError && <div className="alert alert-danger" role="alert">{payFormError}</div>}
                 {payFormSuccess && <div className="alert alert-success" role="alert">{payFormSuccess}</div>}
                 <button className="btn btn-success" type="submit" disabled={paySubmitting}>
-                  Record payment
+                  {t('Record payment')}
                 </button>
               </form>
             </div>
@@ -1202,20 +1254,18 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
         <div className="col-lg-6 mb-4">
           <div className="card h-100">
             <div className="card-body">
-              <h5 className="card-title">Record vendor bill</h5>
+              <h5 className="card-title">{t('Record vendor bill')}</h5>
               <p className="text-muted small">
-                Records a bill from a supplier — what we owe. The
-                supplier&apos;s own bill number is the invoice number; no
-                IRD number is used, and it is never a tax invoice.
+                {t('Records a bill from a supplier — what we owe. The supplier\'s own bill number is the invoice number; no IRD number is used, and it is never a tax invoice.')}
               </p>
               <form onSubmit={createVendorBill} noValidate>
                 <div className="form-group">
-                  <label>Supplier</label>
+                  <label>{t('Supplier')}</label>
                   <MenuPicker
-                    buttonLabel={vbSupplier === SUPPLIER_OTHER ? 'Other — type a new supplier' : (vbSupplier || 'Pick a supplier…')}
-                    options={[{ value: '', label: 'Pick a supplier…' }]
+                    buttonLabel={vbSupplier === SUPPLIER_OTHER ? t('Other — type a new supplier') : (vbSupplier || t('Pick a supplier…'))}
+                    options={[{ value: '', label: t('Pick a supplier…') }]
                       .concat(SUPPLIERS.map((s) => ({ value: s, label: s })))
-                      .concat([{ value: SUPPLIER_OTHER, label: 'Other — type a new supplier' }])}
+                      .concat([{ value: SUPPLIER_OTHER, label: t('Other — type a new supplier') }])}
                     open={openPicker === 'vbSupplier'}
                     onToggle={() => setOpenPicker(openPicker === 'vbSupplier' ? null : 'vbSupplier')}
                     onPick={(v) => { setVbSupplier(v); setVbServiceId(''); setVbService(''); setVbAmount(''); setOpenPicker(null); }}
@@ -1225,7 +1275,7 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
                     <input
                       className="form-control mt-2"
                       type="text"
-                      placeholder="Supplier name"
+                      placeholder={t('Supplier name')}
                       maxLength="255"
                       value={vbSupplierOther}
                       onChange={(e) => setVbSupplierOther(e.target.value)}
@@ -1234,13 +1284,13 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
                   <FieldError msg={vbErrors.supplier && vbErrors.supplier.join(' ')} />
                 </div>
                 <div className="form-group">
-                  <label>Service / item</label>
+                  <label>{t('Service / item')}</label>
                   {vbSavedServices.length > 0 && vbServiceId !== '__other' ? (
                     <MenuPicker
-                      buttonLabel={vbPickedService ? vbPickedService.service : 'Pick a saved service…'}
-                      options={[{ value: '', label: 'Pick a saved service…' }]
+                      buttonLabel={vbPickedService ? vbPickedService.service : t('Pick a saved service…')}
+                      options={[{ value: '', label: t('Pick a saved service…') }]
                         .concat(vbSavedServices.map((s) => ({ value: String(s.id), label: s.service + ((s.amount_npr !== null && s.amount_npr !== undefined) ? ' — ' + money(s.amount_npr) : '') })))
-                        .concat([{ value: '__other', label: 'Other — type a new service' }])}
+                        .concat([{ value: '__other', label: t('Other — type a new service') }])}
                       open={openPicker === 'vbService'}
                       onToggle={() => setOpenPicker(openPicker === 'vbService' ? null : 'vbService')}
                       onPick={pickVbService}
@@ -1251,24 +1301,22 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
                       id="vbService"
                       className="form-control"
                       type="text"
-                      placeholder="e.g. Single Unlimited hosting — example.com"
+                      placeholder={t('e.g. Single Unlimited hosting — example.com')}
                       maxLength="1000"
                       value={vbService}
                       onChange={(e) => setVbService(e.target.value)}
                     />
                   )}
-                  {vbPickedService && tdsLabel(vbPickedService) && (
+                  {vbPickedService && vbTdsText && (
                     <small className="form-text text-muted">
-                      TDS {tdsLabel(vbPickedService)} — on the agreement
-                      rent, not on this bill&apos;s amount. It is only
-                      marked on the record, not counted into TDS payable.
+                      {t('TDS {label} — on the agreement rent, not on this bill\'s amount. It is only marked on the record, not counted into TDS payable.', { label: vbTdsText })}
                     </small>
                   )}
                   <FieldError msg={vbErrors.service && vbErrors.service.join(' ')} />
                 </div>
                 <div className="form-row">
                   <div className="form-group col-md-6">
-                    <label htmlFor="vbAmount">Amount (NPR)</label>
+                    <label htmlFor="vbAmount">{t('Amount (NPR)')}</label>
                     <input
                       id="vbAmount"
                       className="form-control"
@@ -1281,16 +1329,16 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
                     />
                     <FieldError msg={vbErrors.amount_npr && vbErrors.amount_npr.join(' ')} />
                     {vbPickedService && vbPickedService.amount_npr !== null && vbPickedService.amount_npr !== undefined && (
-                      <small className="form-text text-muted">From the saved service — change it to what was actually paid.</small>
+                      <small className="form-text text-muted">{t('From the saved service — change it to what was actually paid.')}</small>
                     )}
                   </div>
                   <div className="form-group col-md-6">
-                    <label>Amount includes 13% VAT?</label>
+                    <label>{t('Amount includes 13% VAT?')}</label>
                     <MenuPicker
-                      buttonLabel={vbVatIncluded === 'yes' ? 'Yes — 13% included' : 'No'}
+                      buttonLabel={vbVatIncluded === 'yes' ? t('Yes — 13% included') : t('No')}
                       options={[
-                        { value: 'yes', label: 'Yes — 13% included' },
-                        { value: 'no', label: 'No' },
+                        { value: 'yes', label: t('Yes — 13% included') },
+                        { value: 'no', label: t('No') },
                       ]}
                       open={openPicker === 'vbVatIncluded'}
                       onToggle={() => setOpenPicker(openPicker === 'vbVatIncluded' ? null : 'vbVatIncluded')}
@@ -1301,7 +1349,7 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
                 </div>
                 <div className="form-row">
                   <div className="form-group col-md-6">
-                    <label htmlFor="vbDate">Bill date</label>
+                    <label htmlFor="vbDate">{t('Bill date')}</label>
                     <input
                       id="vbDate"
                       className="form-control"
@@ -1312,7 +1360,7 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
                     <FieldError msg={vbErrors.date_ad && vbErrors.date_ad.join(' ')} />
                   </div>
                   <div className="form-group col-md-6">
-                    <label htmlFor="vbDueDate">Due date (optional)</label>
+                    <label htmlFor="vbDueDate">{t('Due date (optional)')}</label>
                     <input
                       id="vbDueDate"
                       className="form-control"
@@ -1324,12 +1372,12 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
                   </div>
                 </div>
                 <div className="form-group">
-                  <label htmlFor="vbBillNo">Supplier&apos;s bill no. (optional)</label>
+                  <label htmlFor="vbBillNo">{t('Supplier\'s bill no. (optional)')}</label>
                   <input
                     id="vbBillNo"
                     className="form-control"
                     type="text"
-                    placeholder="e.g. 73408"
+                    placeholder={t('e.g. 73408')}
                     maxLength="50"
                     value={vbBillNo}
                     onChange={(e) => setVbBillNo(e.target.value)}
@@ -1337,7 +1385,7 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
                   <FieldError msg={vbErrors.supplier_bill_no && vbErrors.supplier_bill_no.join(' ')} />
                 </div>
                 <div className="form-group">
-                  <label htmlFor="vbNotes">Notes (optional)</label>
+                  <label htmlFor="vbNotes">{t('Notes (optional)')}</label>
                   <textarea
                     id="vbNotes"
                     className="form-control"
@@ -1351,7 +1399,7 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
                 {vbFormError && <div className="alert alert-danger" role="alert">{vbFormError}</div>}
                 {vbFormSuccess && <div className="alert alert-success" role="alert">{vbFormSuccess}</div>}
                 <button className="btn btn-primary" type="submit" disabled={vbSubmitting}>
-                  Record vendor bill
+                  {t('Record vendor bill')}
                 </button>
               </form>
             </div>
@@ -1360,27 +1408,26 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
         <div className="col-lg-6 mb-4">
           <div className="card h-100">
             <div className="card-body">
-              <h5 className="card-title">Record vendor receipt</h5>
+              <h5 className="card-title">{t('Record vendor receipt')}</h5>
               <p className="text-muted small">
-                Records a payment against an open vendor bill. The amount
-                cannot be more than what is still to pay.
+                {t('Records a payment against an open vendor bill. The amount cannot be more than what is still to pay.')}
               </p>
               <form onSubmit={recordVendorPayment} noValidate>
                 <div className="form-group">
-                  <label>Open vendor bill</label>
+                  <label>{t('Open vendor bill')}</label>
                   <MenuPicker
                     buttonLabel={selectedVendorBill
                       ? (selectedVendorBill.invoice_number || ('#' + selectedVendorBill.id)) + ' — ' +
-                        selectedVendorBill.client_name + ' — still to pay ' +
-                        money(selectedVendorBill.remaining_amount_npr)
-                      : 'Pick an open vendor bill…'}
+                        selectedVendorBill.client_name + ' — ' +
+                        t('still to pay {amount}', { amount: money(selectedVendorBill.remaining_amount_npr) })
+                      : t('Pick an open vendor bill…')}
                     options={shownVendorBills.length
-                      ? [{ value: '', label: 'Pick an open vendor bill…' }].concat(shownVendorBills.map((inv) => ({
+                      ? [{ value: '', label: t('Pick an open vendor bill…') }].concat(shownVendorBills.map((inv) => ({
                           value: String(inv.id),
                           label: (inv.invoice_number || ('#' + inv.id)) + ' — ' + inv.client_name +
-                            ' — still to pay ' + money(inv.remaining_amount_npr),
+                            ' — ' + t('still to pay {amount}', { amount: money(inv.remaining_amount_npr) }),
                         })))
-                      : [{ value: '', label: effectiveFy === 'all' ? 'No open vendor bills' : 'No open vendor bills in ' + effectiveFy }]}
+                      : [{ value: '', label: effectiveFy === 'all' ? t('No open vendor bills') : t('No open vendor bills in {fy}', { fy: digits(effectiveFy) }) }]}
                     open={openPicker === 'vrBill'}
                     onToggle={() => setOpenPicker(openPicker === 'vrBill' ? null : 'vrBill')}
                     onPick={(v) => { setVrBillId(v); setOpenPicker(null); }}
@@ -1388,14 +1435,15 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
                   />
                   {effectiveFy !== 'all' && (
                     <small className="form-text text-muted">
-                      Only {effectiveFy} vendor bills are listed — change the Fiscal year picker to see other years.
+                      {t('Only {fy} vendor bills are listed — change the Fiscal year picker to see other years.', { fy: digits(effectiveFy) })}
                     </small>
                   )}
                   <small className="form-text text-muted">
                     {selectedVendorBill
-                      ? 'Still to pay on this bill: ' +
-                        money(selectedVendorBill.remaining_amount_npr) +
-                        ' · billed ' + (selectedVendorBill.date_ad || '—')
+                      ? t('Still to pay on this bill: {amount} · billed {date}', {
+                        amount: money(selectedVendorBill.remaining_amount_npr),
+                        date: selectedVendorBill.date_ad || '—',
+                      })
                       : ''}
                   </small>
                   {vendorBillsError && (
@@ -1405,7 +1453,7 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
                 </div>
                 <div className="form-row">
                   <div className="form-group col-md-6">
-                    <label htmlFor="vrAmount">Amount (NPR)</label>
+                    <label htmlFor="vrAmount">{t('Amount (NPR)')}</label>
                     <input
                       id="vrAmount"
                       className="form-control"
@@ -1419,7 +1467,7 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
                     <FieldError msg={vrErrors.amount_npr && vrErrors.amount_npr.join(' ')} />
                   </div>
                   <div className="form-group col-md-6">
-                    <label htmlFor="vrDate">Payment date</label>
+                    <label htmlFor="vrDate">{t('Payment date')}</label>
                     <input
                       id="vrDate"
                       className="form-control"
@@ -1431,12 +1479,12 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
                   </div>
                 </div>
                 <div className="form-group">
-                  <label htmlFor="vrTxnRef">Transaction ref (optional)</label>
+                  <label htmlFor="vrTxnRef">{t('Transaction ref (optional)')}</label>
                   <input
                     id="vrTxnRef"
                     className="form-control"
                     type="text"
-                    placeholder="e.g. cheque no. or transfer ref"
+                    placeholder={t('e.g. cheque no. or transfer ref')}
                     maxLength="255"
                     value={vrTxnRef}
                     onChange={(e) => setVrTxnRef(e.target.value)}
@@ -1444,12 +1492,12 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
                   <FieldError msg={vrErrors.txn_ref && vrErrors.txn_ref.join(' ')} />
                 </div>
                 <div className="form-group">
-                  <label htmlFor="vrReceiptNo">Receipt number (optional)</label>
+                  <label htmlFor="vrReceiptNo">{t('Receipt number (optional)')}</label>
                   <input
                     id="vrReceiptNo"
                     className="form-control"
                     type="text"
-                    placeholder="Leave empty for the next number"
+                    placeholder={t('Leave empty for the next number')}
                     maxLength="50"
                     value={vrReceiptNo}
                     onChange={(e) => setVrReceiptNo(e.target.value)}
@@ -1459,7 +1507,7 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
                 {vrFormError && <div className="alert alert-danger" role="alert">{vrFormError}</div>}
                 {vrFormSuccess && <div className="alert alert-success" role="alert">{vrFormSuccess}</div>}
                 <button className="btn btn-success" type="submit" disabled={vrSubmitting}>
-                  Record vendor receipt
+                  {t('Record vendor receipt')}
                 </button>
               </form>
             </div>
@@ -1467,7 +1515,7 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
         </div>
       </div>
       <p className="text-muted small">
-        Credit notes are not in this first version — invoice and payment only.
+        {t('Credit notes are not in this first version — invoice and payment only.')}
       </p>
     </>
   );
