@@ -1,57 +1,76 @@
 import { useEffect, useState } from 'react';
 import { friendlyError, money } from '../api.js';
-import { dateLabel } from '../dates.js';
+import { dateLabel, fyOfAd, fyOfBs, fyString } from '../dates.js';
 
-/* The Client Invoices register, like the Laravel page: the sent
-   invoices for the fiscal year grouped into Tax / Petty cash /
-   Other, then the locked tax invoices and the locked petty cash
-   invoices, then the credit notes that reverse (part of) a locked
-   tax invoice. Lists only — adding lives in the Billing tab. The
-   credit-notes card reads from GET /api/v1/credit-notes and is
-   read-only: a credit note is created through the existing
-   credit-note flow, not from this card. */
+/* The Tax invoices register: the sent tax invoices for the fiscal
+   year, then the locked tax invoices, then the credit notes that
+   reverse (part of) a locked tax invoice. Petty cash lives on its
+   own tab — nothing non-taxed is shown here. Lists only — adding
+   lives in the Billing tab. The credit-notes card reads from
+   GET /api/v1/credit-notes and is read-only: a credit note is
+   created through the existing credit-note flow, not from this
+   card. */
 
-/* The invoice number as shown: a tax invoice (a VAT treatment, or
-   any VAT charged) shows its number; anything else carries NT in
-   front — the same rule as InvoiceNumbering::displayNumber. */
+/* A tax invoice, the same rule as InvoiceNumbering::isTaxInvoice:
+   a VAT treatment, or any VAT charged. */
+export function isTaxInvoice(inv) {
+  return ['vat_tds', 'vat_only'].includes(inv.treatment) ||
+    (Number(inv.vat_npr) || 0) > 0;
+}
+
+/* A petty-cash invoice: no VAT and no TDS. Treatment no_vat or
+   no_vat_no_tds with no VAT and no TDS charged. A row whose
+   treatment was never recorded is NOT petty — it is unclassified. */
+export function isPettyInvoice(inv) {
+  return ['no_vat', 'no_vat_no_tds'].includes(inv.treatment) &&
+    (Number(inv.vat_npr) || 0) === 0 &&
+    (Number(inv.tds_npr) || 0) === 0;
+}
+
+/* The fiscal-year label for a petty invoice with no stored
+   fiscal_year — from its BS date first, AD date as fallback. */
+export function pettyFy(inv) {
+  const fromBs = inv.date_bs ? fyOfBs(inv.date_bs) : null;
+  if (fromBs) return fyString(fromBs);
+  const fromAd = inv.date_ad ? fyOfAd(inv.date_ad) : null;
+  if (fromAd) return fyString(fromAd);
+  return null;
+}
+
+/* The invoice number as shown. A tax invoice shows its number
+   as-is. A petty-cash invoice carries its year and NT in front —
+   {fiscal_year}-NT-{number} — so the year is visible wherever
+   the number is shown. Only client (sent) invoices use this
+   helper; received vendor bills keep the supplier's bill number
+   as-is and never pass through here. */
 export function displayNumber(inv) {
   const num = inv.invoice_number || '—';
   if (num === '—') return num;
-  const isTax = ['vat_tds', 'vat_only'].includes(inv.treatment) ||
-    (Number(inv.vat_npr) || 0) > 0;
-  return isTax ? num : 'NT-' + num;
+  if (isTaxInvoice(inv)) return num;
+  const fy = inv.fiscal_year || pettyFy(inv);
+  return fy ? fy + '-NT-' + num : 'NT-' + num;
 }
 
 export function isSent(inv) {
   return inv.kind === 'sent' || inv.kind === 'mou_receivable';
 }
 
-/* The three groups of the register — the same rule as
-   BillingSimulatorService::groupInvoices. */
-export function groupInvoices(rows) {
-  const groups = { tax: [], petty_cash: [], other: [] };
-  rows.forEach((inv) => {
-    if (['vat_tds', 'vat_only'].includes(inv.treatment)) groups.tax.push(inv);
-    else if (inv.treatment === 'no_vat_no_tds') groups.petty_cash.push(inv);
-    else groups.other.push(inv);
-  });
-  return groups;
-}
-
 export function groupTotal(items) {
   return items.reduce((sum, inv) => sum + (Number(inv.amount_npr) || 0), 0);
 }
 
-/* A locked tax invoice carries the tax-invoice marker. */
+/* A locked tax invoice: the tax-invoice marker on a tax invoice. */
 export function lockedTax(rows) {
-  return rows.filter((inv) => inv.tax_invoice_issued);
+  return rows.filter((inv) => inv.tax_invoice_issued && isTaxInvoice(inv));
 }
 
-/* Locked petty cash: Paid no-VAT invoices (kind sent only). */
+/* Locked petty cash: Paid petty-cash invoices (kind sent only).
+   A row with VAT charged is a tax invoice, not petty cash, even
+   when its treatment says no_vat_no_tds. */
 export function lockedPettyCash(rows) {
   return rows.filter((inv) =>
     inv.kind === 'sent' &&
-    ['no_vat', 'no_vat_no_tds'].includes(inv.treatment) &&
+    isPettyInvoice(inv) &&
     inv.status === 'Paid');
 }
 
@@ -86,12 +105,6 @@ export function statusBadge(status) {
   if (status === 'Partially paid') return 'badge-info';
   return 'badge-secondary';
 }
-
-const GROUPS = [
-  { key: 'tax', heading: 'Tax invoices' },
-  { key: 'petty_cash', heading: 'Petty cash' },
-  { key: 'other', heading: 'Other invoices' },
-];
 
 export function GroupTable({ items, onPrint }) {
   return (
@@ -192,14 +205,13 @@ export default function Invoices({ api, refreshKey, fy, initialRows, initialCred
       : rows.filter((r) => r.fiscal_year === effectiveFy);
 
   const sent = shown.filter(isSent);
-  const groups = groupInvoices(sent);
-  const locked = lockedTax(shown);
-  const lockedPetty = lockedPettyCash(shown);
+  const taxInvoices = sent.filter(isTaxInvoice);
+  const locked = lockedTax(sent);
   const shownCreditNotes = creditNotesForFy(creditNotes, effectiveFy);
 
   return (
     <>
-      <h3 className="h5">Client Invoices</h3>
+      <h3 className="h5">Tax invoices</h3>
       <p className="mb-2 text-muted">
         {effectiveFy === 'all'
           ? 'Showing all years.'
@@ -211,22 +223,17 @@ export default function Invoices({ api, refreshKey, fy, initialRows, initialCred
         <>
           <div className="card mb-4">
             <div className="card-body">
-              <h4 className="card-title h6">Sent invoices</h4>
-              {GROUPS.map((g) => {
-                const items = groups[g.key];
-                return (
-                  <div key={g.key}>
-                    <h5 className="h6 mt-3">
-                      {g.heading} — Subtotal: {money(groupTotal(items))}
-                    </h5>
-                    {items.length ? (
-                      <GroupTable items={items} onPrint={onPrintInvoice} />
-                    ) : (
-                      <p className="text-muted">No client invoices in this fiscal year.</p>
-                    )}
-                  </div>
-                );
-              })}
+              <h4 className="card-title h6">
+                Tax invoices — Subtotal: {money(groupTotal(taxInvoices))}
+              </h4>
+              <p className="text-muted small">
+                Tax invoices only — VAT charged, with or without TDS. Petty cash lives on its own tab.
+              </p>
+              {taxInvoices.length ? (
+                <GroupTable items={taxInvoices} onPrint={onPrintInvoice} />
+              ) : (
+                <p className="text-muted mb-0">No tax invoices in this fiscal year.</p>
+              )}
             </div>
           </div>
           <div className="card mb-4">
@@ -271,21 +278,6 @@ export default function Invoices({ api, refreshKey, fy, initialRows, initialCred
                 </div>
               ) : (
                 <p className="text-muted mb-0">No locked tax invoices in this fiscal year.</p>
-              )}
-            </div>
-          </div>
-          <div className="card mb-4">
-            <div className="card-body">
-              <h4 className="card-title h6">
-                Locked petty cash invoices — Subtotal: {money(groupTotal(lockedPetty))}
-              </h4>
-              <p className="text-muted small">
-                Paid invoices in this fiscal year — cash that remains as petty cash.
-              </p>
-              {lockedPetty.length ? (
-                <GroupTable items={lockedPetty} onPrint={onPrintInvoice} />
-              ) : (
-                <p className="text-muted mb-0">No locked petty cash invoices in this fiscal year.</p>
               )}
             </div>
           </div>
