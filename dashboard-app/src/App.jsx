@@ -483,9 +483,12 @@ export default function App() {
                     )}
                     {activeTab === 'receipts' && (
                       <Receipts
+                        api={api}
                         data={sections.receipts}
                         fy={effectiveFy}
+                        refreshKey={invoicesRefresh}
                         onPrintReceipt={(id) => setPrintView({ kind: 'receipt', id, from: 'receipts' })}
+                        onPrintInvoice={(id) => setPrintView({ kind: 'invoice', id, from: 'receipts' })}
                       />
                     )}
                     {activeTab === 'petty' && (

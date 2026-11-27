@@ -146,6 +146,7 @@ export function sortInvoices(rows, key, dir) {
       case 'amount': return inv.amount_npr;
       case 'status': return inv.status || '';
       case 'issued': return inv.date_ad || '';
+      case 'paid': return inv.paid_date_ad || inv.date_ad || '';
       default: {
         const n = inv.invoice_number;
         if (n == null || n === '') return null;

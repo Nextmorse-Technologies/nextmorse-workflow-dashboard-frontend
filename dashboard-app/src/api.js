@@ -114,3 +114,21 @@ export function fieldErrors(err) {
   }
   return {};
 }
+
+/* Fetch every page of a paginated list endpoint (per_page=200),
+   following the API's pagination meta. Returns the full array —
+   the same loop the Invoices tab uses inline. */
+export async function fetchAllPages(api, path) {
+  let all = [];
+  let page = 1;
+  let total = Infinity;
+  while (all.length < total) {
+    const resp = await api(path + (path.includes('?') ? '&' : '?') + 'per_page=200&page=' + page);
+    const d = (resp && resp.data) || [];
+    total = (resp && resp.meta && resp.meta.pagination && resp.meta.pagination.total) || d.length;
+    all = all.concat(d);
+    page += 1;
+    if (!d.length) break;
+  }
+  return all;
+}
