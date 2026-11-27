@@ -49,9 +49,19 @@ export function prefillFromRule(rule, activeRules, clientDomain) {
 
 /* A payment is only ever recorded against a client invoice (sent or
    MOU receivable) in the Record payment form — vendor bills have
-   their own form below. */
-export function receivableInvoices(openInvoices) {
-  return (openInvoices || []).filter((inv) => inv.kind === 'sent' || inv.kind === 'mou_receivable');
+   their own form below. The fiscal year narrows the list to that
+   year's invoices; 'all' keeps every year. */
+export function receivableInvoices(openInvoices, fy) {
+  return (openInvoices || []).filter((inv) =>
+    (inv.kind === 'sent' || inv.kind === 'mou_receivable') &&
+    (!fy || fy === 'all' || inv.fiscal_year === fy));
+}
+
+/* The open vendor bills for the Record vendor receipt form, narrowed
+   to the picked fiscal year the same way; 'all' keeps every year. */
+export function vendorBillsForFy(vendorBills, fy) {
+  return (vendorBills || []).filter((inv) =>
+    !fy || fy === 'all' || inv.fiscal_year === fy);
 }
 
 /* The vendor bill POST body: the supplier, service, amount, VAT flag
@@ -195,7 +205,7 @@ export function joinInvoiceLines(lines) {
   return { service: parts.join(' + '), amount: Math.round(total * 100) / 100 };
 }
 
-export default function Billing({ api, clients, openInvoices, meta, onWrote, prefill, onPrefillApplied, vendorRefresh, vendorServices, initialVendorBills, initialOpenPicker }) {
+export default function Billing({ api, clients, openInvoices, meta, onWrote, prefill, onPrefillApplied, vendorRefresh, vendorServices, fy, initialVendorBills, initialOpenPicker }) {
   const [invClient, setInvClient] = useState('');
   /* Which custom picker is open ('client', 'service-<key>',
      'attach-<key>', 'treatment', 'payInvoice', 'vbSupplier',
@@ -585,12 +595,23 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
   }, [rules, rulesLoading, pendingPrefill]);
 
   /* Record payment lists client invoices only — a vendor bill never
-     appears here; it has its own form below. */
-  const receivable = receivableInvoices(openInvoices);
+     appears here; it has its own form below. Both pickers follow the
+     shared Fiscal year picker: only that year's open invoices and
+     open vendor bills are offered. A pick from another year is
+     cleared when the year changes, so the form can never pay a
+     record the picker no longer shows. */
+  const effectiveFy = fy || 'all';
+  const receivable = receivableInvoices(openInvoices, effectiveFy);
+  const shownVendorBills = vendorBillsForFy(vendorBills, effectiveFy);
+  useEffect(() => {
+    setPayInvoiceId('');
+    setVrBillId('');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [effectiveFy]);
   const selectedOpenInvoice = receivable.find(
     (inv) => String(inv.id) === String(payInvoiceId),
   ) || null;
-  const selectedVendorBill = vendorBills.find(
+  const selectedVendorBill = shownVendorBills.find(
     (inv) => String(inv.id) === String(vrBillId),
   ) || null;
 
@@ -1094,12 +1115,17 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
                           label: inv.invoice_number + ' — ' + inv.client_name +
                             ' — remaining ' + money(inv.remaining_amount_npr),
                         })))
-                      : [{ value: '', label: 'No open invoices' }]}
+                      : [{ value: '', label: effectiveFy === 'all' ? 'No open invoices' : 'No open invoices in ' + effectiveFy }]}
                     open={openPicker === 'payInvoice'}
                     onToggle={() => setOpenPicker(openPicker === 'payInvoice' ? null : 'payInvoice')}
                     onPick={(v) => { setPayInvoiceId(v); setOpenPicker(null); }}
                     ariaLabel="Open invoice"
                   />
+                  {effectiveFy !== 'all' && (
+                    <small className="form-text text-muted">
+                      Only {effectiveFy} invoices are listed — change the Fiscal year picker to see other years.
+                    </small>
+                  )}
                   <small className="form-text text-muted">
                     {selectedOpenInvoice
                       ? 'Still to receive on this invoice: ' +
@@ -1348,18 +1374,23 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
                         selectedVendorBill.client_name + ' — still to pay ' +
                         money(selectedVendorBill.remaining_amount_npr)
                       : 'Pick an open vendor bill…'}
-                    options={vendorBills.length
-                      ? [{ value: '', label: 'Pick an open vendor bill…' }].concat(vendorBills.map((inv) => ({
+                    options={shownVendorBills.length
+                      ? [{ value: '', label: 'Pick an open vendor bill…' }].concat(shownVendorBills.map((inv) => ({
                           value: String(inv.id),
                           label: (inv.invoice_number || ('#' + inv.id)) + ' — ' + inv.client_name +
                             ' — still to pay ' + money(inv.remaining_amount_npr),
                         })))
-                      : [{ value: '', label: 'No open vendor bills' }]}
+                      : [{ value: '', label: effectiveFy === 'all' ? 'No open vendor bills' : 'No open vendor bills in ' + effectiveFy }]}
                     open={openPicker === 'vrBill'}
                     onToggle={() => setOpenPicker(openPicker === 'vrBill' ? null : 'vrBill')}
                     onPick={(v) => { setVrBillId(v); setOpenPicker(null); }}
                     ariaLabel="Open vendor bill"
                   />
+                  {effectiveFy !== 'all' && (
+                    <small className="form-text text-muted">
+                      Only {effectiveFy} vendor bills are listed — change the Fiscal year picker to see other years.
+                    </small>
+                  )}
                   <small className="form-text text-muted">
                     {selectedVendorBill
                       ? 'Still to pay on this bill: ' +

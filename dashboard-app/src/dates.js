@@ -31,6 +31,20 @@ export function fyOfBs(bs) {
   return p.mo >= 4 ? p.y : p.y - 1;
 }
 
+/* Fiscal year an AD date belongs to — the starting BS year.
+   Approximate: 1 Shrawan falls on 16–17 July, so a date on or
+   after 17 July belongs to the BS year starting that AD year + 57,
+   and anything earlier to the year + 56. Only a fallback when no
+   BS date exists — the BS date is authoritative where present. */
+export function fyOfAd(ad) {
+  if (!ad) return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(ad);
+  if (!m) return null;
+  const y = +m[1], mo = +m[2], d = +m[3];
+  if (mo > 7 || (mo === 7 && d >= 17)) return y + 57;
+  return y + 56;
+}
+
 export function fyLabel(fy) {
   return 'FY ' + fy + '/' + String(fy + 1).slice(2);
 }

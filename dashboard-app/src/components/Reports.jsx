@@ -1,12 +1,41 @@
 import { money } from '../api.js';
 
-export default function Reports({ data }) {
+/* The fiscal year an audit or meeting belongs to, from its own
+   fiscal_year label ('2083/84' → 2083). */
+export function reportRowFy(row) {
+  if (!row || !row.fiscal_year) return null;
+  const y = parseInt(String(row.fiscal_year).split('/')[0], 10);
+  return y || null;
+}
+
+/* The rows for the picked year; 'all' keeps every year. */
+export function reportRowsForFy(rows, fy) {
+  const list = rows || [];
+  if (!fy || fy === 'all') return list;
+  const fyStart = parseInt(String(fy).split('/')[0], 10);
+  return list.filter((r) => reportRowFy(r) === fyStart);
+}
+
+export default function Reports({ data, fy }) {
   if (!data) return null;
   const holders = (data.shareholders && data.shareholders.holders) || [];
+  /* The fiscal year comes from the shared picker in the tab bar
+     (App, via Overview); the audits and meetings follow it. The
+     shareholders are a standing record and the audit-log count is
+     all-time — both stay, labelled. */
+  const effectiveFy = fy || 'all';
+  const audits = reportRowsForFy(data.audits_on_file, effectiveFy);
+  const meetings = reportRowsForFy(data.meetings, effectiveFy);
   return (
     <>
       <h3 className="h5">Reports</h3>
+      <p className="mb-2 text-muted">
+        {effectiveFy === 'all'
+          ? 'Showing all years.'
+          : 'Showing ' + effectiveFy + ' — audits and meetings for ' + effectiveFy + '; shareholders and the audit-log count are all-years.'}
+      </p>
       <h4 className="h6">Statutory audits on file</h4>
+      {audits.length ? (
       <div className="table-responsive">
         <table className="table table-striped table-sm bg-white">
           <thead>
@@ -17,7 +46,7 @@ export default function Reports({ data }) {
             </tr>
           </thead>
           <tbody>
-            {(data.audits_on_file || []).map((a, i) => (
+            {audits.map((a, i) => (
               <tr key={i}>
                 <td>{a.fiscal_year}</td>
                 <td>{a.udin}</td>
@@ -27,7 +56,11 @@ export default function Reports({ data }) {
           </tbody>
         </table>
       </div>
+      ) : (
+        <p className="text-muted">No audits on file{effectiveFy === 'all' ? '.' : ' for ' + effectiveFy + '.'}</p>
+      )}
       <h4 className="h6 mt-3">Meetings</h4>
+      {meetings.length ? (
       <div className="table-responsive">
         <table className="table table-striped table-sm bg-white">
           <thead>
@@ -39,7 +72,7 @@ export default function Reports({ data }) {
             </tr>
           </thead>
           <tbody>
-            {(data.meetings || []).map((m, i) => (
+            {meetings.map((m, i) => (
               <tr key={i}>
                 <td>{m.meeting_type}</td>
                 <td>{m.fiscal_year}</td>
@@ -50,7 +83,10 @@ export default function Reports({ data }) {
           </tbody>
         </table>
       </div>
-      <h4 className="h6 mt-3">Shareholders (verified, s.51)</h4>
+      ) : (
+        <p className="text-muted">No meetings{effectiveFy === 'all' ? '.' : ' in ' + effectiveFy + '.'}</p>
+      )}
+      <h4 className="h6 mt-3">Shareholders (verified, s.51) — all years</h4>
       <div className="table-responsive">
         <table className="table table-striped table-sm bg-white">
           <thead>
@@ -72,7 +108,7 @@ export default function Reports({ data }) {
         </table>
       </div>
       <p className="text-muted small">
-        Audit-log entries:{' '}
+        Audit-log entries (all years):{' '}
         {data.audit_log && data.audit_log.entry_count !== undefined
           ? data.audit_log.entry_count
           : '—'}

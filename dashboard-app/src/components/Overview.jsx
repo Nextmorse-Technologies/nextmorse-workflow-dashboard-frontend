@@ -64,9 +64,11 @@ export default function Overview({ data, api, fy, refreshKey }) {
         </table>
       </div>
       {/* The report, last on this page — the same tables as the
-          Laravel /reports page, from the same payload. */}
+          Laravel /reports page, from the same payload. The audits
+          and meetings follow the Fiscal year picker; the
+          shareholders and the audit-log count are all-years. */}
       <div className="mt-5">
-        <Reports data={data.reports} />
+        <Reports data={data.reports} fy={fy} />
       </div>
       {/* The ledger, after the report — the same sections as the
           Laravel /ledger page, from the API. */}

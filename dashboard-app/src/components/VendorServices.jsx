@@ -1,14 +1,17 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import MenuPicker from './MenuPicker';
 import { fieldErrors, friendlyError, money } from '../api.js';
 import { dateLabel } from '../dates.js';
 import { SUPPLIERS, SUPPLIER_OTHER } from '../suppliers.js';
+import { RPM_NAME, RPM_UTILITY_LABEL } from './VendorBills.jsx';
 
 /* The supplier-side mirror of the Billing rules tab: a supplier's
    saved services. The Record vendor bill form picks from these
    instead of typing a service each time, and a service with a TDS
    rate posts that TDS to the tax register when a bill is recorded
-   from it. The list is all-years, like the Billing rules tab. */
+   from it. The tab follows the shared Fiscal year picker: each
+   service shows the bills recorded for it in the picked year. A
+   service with no bills that year stays listed, showing none. */
 
 export const VENDOR_SERVICE_CYCLES = ['none', 'monthly', 'quarterly', '3-monthly', '4-monthly', 'annual'];
 export const CYCLE_LABELS = {
@@ -50,14 +53,95 @@ export function servicesForSupplier(services, supplier) {
     .sort((a, b) => String(a.service).localeCompare(String(b.service)));
 }
 
+/* The money-out bill kinds — the recorded bills for a service. */
+const BILL_KINDS = ['paid_rent', 'paid_utility', 'paid_supplier', 'paid_babal', 'paid_receipt'];
+
+/* Does a paid bill belong to a saved service? The supplier must
+   match (the utility rows billed as 'Utility Payment — 9851073311'
+   fold into Real Property Management, as on the Vendor bills tab).
+   The service matches by kind for rent and for the RPM utilities —
+   the utility bills cover water, electricity and waste together on
+   one meter note, so they cannot be split by utility — and by exact
+   service text for anything else (a bill recorded from the picker
+   carries the saved service's name). */
+export function billMatchesService(inv, service) {
+  if (!inv || !service) return false;
+  const name = inv.client_name === RPM_UTILITY_LABEL ? RPM_NAME : inv.client_name;
+  if (name !== service.supplier) return false;
+  if (/rent/i.test(String(service.service || ''))) return inv.kind === 'paid_rent';
+  if (service.supplier === RPM_NAME) return inv.kind === 'paid_utility';
+  const want = String(service.service || '').trim().toLowerCase();
+  const got = String(inv.service || '').trim().toLowerCase();
+  return want !== '' && got === want;
+}
+
+/* Each saved service with the bills recorded for it in the picked
+   fiscal year — count and total, derived from the rows, never
+   hardcoded. 'all' keeps every year. A service with no bills in
+   the year comes back with an empty list, not dropped. */
+export function serviceActivity(services, invoices, fy) {
+  const bills = (invoices || []).filter((inv) =>
+    inv.status === 'Paid' &&
+    BILL_KINDS.includes(inv.kind) &&
+    (!fy || fy === 'all' || inv.fiscal_year === fy),
+  );
+  return (services || []).map((s) => {
+    const mine = bills.filter((inv) => billMatchesService(inv, s));
+    const total = Math.round(mine.reduce((sum, inv) => sum + (Number(inv.amount_npr) || 0), 0) * 100) / 100;
+    return { service: s, bills: mine, count: mine.length, total };
+  });
+}
+
 function FieldError({ msg }) {
   return msg ? <small className="form-text text-danger">{msg}</small> : null;
 }
 
-export default function VendorServices({ api, services, onWrote, initialServices }) {
+export default function VendorServices({ api, services, onWrote, fy, refreshKey, initialServices, initialInvoices }) {
   const rows = (initialServices || services || []).slice().sort(
     (a, b) => String(a.supplier).localeCompare(String(b.supplier)) || String(a.service).localeCompare(String(b.service)),
   );
+  /* The fiscal year comes from the shared picker in the tab bar
+     (App); the activity column only filters on it. The bills come
+     from the invoices API, the way VendorBills does it — fetched
+     once, derived client-side. */
+  const effectiveFy = fy || 'all';
+  const [invoices, setInvoices] = useState(initialInvoices || null);
+  const [invoicesLoading, setInvoicesLoading] = useState(!initialInvoices);
+  const [invoicesError, setInvoicesError] = useState('');
+
+  useEffect(() => {
+    if (initialInvoices) return;
+    let cancelled = false;
+    (async () => {
+      setInvoicesLoading(true);
+      setInvoicesError('');
+      try {
+        let all = [];
+        let page = 1;
+        let total = Infinity;
+        while (all.length < total) {
+          const resp = await api('/invoices?per_page=200&page=' + page);
+          const d = (resp && resp.data) || [];
+          total = (resp && resp.meta && resp.meta.pagination && resp.meta.pagination.total) || d.length;
+          all = all.concat(d);
+          page += 1;
+          if (!d.length) break;
+        }
+        if (!cancelled) setInvoices(all);
+      } catch (err) {
+        if (!cancelled) setInvoicesError(friendlyError(err));
+      } finally {
+        if (!cancelled) setInvoicesLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+    // Re-fetch when a Billing write lands.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshKey]);
+
+  const activity = serviceActivity(rows, invoices, effectiveFy);
+  const activityById = {};
+  activity.forEach((a) => { activityById[a.service.id] = a; });
 
   const [vsSupplier, setVsSupplier] = useState('');
   const [vsSupplierOther, setVsSupplierOther] = useState('');
@@ -132,35 +216,58 @@ export default function VendorServices({ api, services, onWrote, initialServices
         15,400 agreement rent, payable to KMC — marked on the record
         here, not counted into TDS payable.
       </p>
+      <p className="text-muted small">
+        {effectiveFy === 'all'
+          ? 'Showing all years — the Bills column counts every bill recorded for each service.'
+          : 'Showing ' + effectiveFy + ' — the Bills column counts only the bills recorded for each service in ' + effectiveFy + '.'}
+      </p>
+      {invoicesLoading && <p className="text-muted">Loading bills…</p>}
+      {invoicesError && <div className="alert alert-danger" role="alert">{invoicesError}</div>}
       {rows.length === 0 ? (
         <p className="text-muted">No vendor services saved yet.</p>
       ) : (
-        <table className="table table-sm">
-          <thead>
-            <tr>
-              <th>Supplier</th>
-              <th>Service</th>
-              <th>Cycle</th>
-              <th>Amount</th>
-              <th>VAT</th>
-              <th>TDS</th>
-              <th>Next due</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((s) => (
-              <tr key={s.id}>
-                <td>{s.supplier}</td>
-                <td>{s.service}</td>
-                <td>{CYCLE_LABELS[s.cycle] || s.cycle}</td>
-                <td>{(s.amount_npr === null || s.amount_npr === undefined) ? '— varies' : money(s.amount_npr)}</td>
-                <td>{s.vat_included ? '13% included' : 'No VAT'}</td>
-                <td>{tdsLabel(s) || '—'}</td>
-                <td>{s.next_due_ad ? dateLabel(s.next_due_ad) : '—'}</td>
+        <>
+          <table className="table table-sm">
+            <thead>
+              <tr>
+                <th>Supplier</th>
+                <th>Service</th>
+                <th>Cycle</th>
+                <th>Amount</th>
+                <th>VAT</th>
+                <th>TDS</th>
+                <th>Next due</th>
+                <th className="text-right">Bills{effectiveFy === 'all' ? '' : ' in ' + effectiveFy}</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {rows.map((s) => {
+                const a = activityById[s.id] || { count: 0, total: 0 };
+                return (
+                  <tr key={s.id}>
+                    <td>{s.supplier}</td>
+                    <td>{s.service}</td>
+                    <td>{CYCLE_LABELS[s.cycle] || s.cycle}</td>
+                    <td>{(s.amount_npr === null || s.amount_npr === undefined) ? '— varies' : money(s.amount_npr)}</td>
+                    <td>{s.vat_included ? '13% included' : 'No VAT'}</td>
+                    <td>{tdsLabel(s) || '—'}</td>
+                    <td>{s.next_due_ad ? dateLabel(s.next_due_ad) : '—'}</td>
+                    <td className="text-right">
+                      {a.count === 0
+                        ? 'No bills' + (effectiveFy === 'all' ? '' : ' in ' + effectiveFy)
+                        : a.count + ' bill' + (a.count === 1 ? '' : 's') + ' — ' + money(a.total)}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          <p className="text-muted small">
+            Utility bills cover water, electricity and waste together on one
+            meter note, so the same bills appear under each utility service —
+            do not add the three rows together.
+          </p>
+        </>
       )}
 
       <div className="card mt-4">

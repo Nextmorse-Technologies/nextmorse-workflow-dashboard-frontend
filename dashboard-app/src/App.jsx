@@ -160,10 +160,10 @@ export default function App() {
 
   /* The one fiscal-year picker, like Laravel's top-bar picker: it
      sits at the right end of the tab bar, after Billing, on every
-     page, and drives the Invoices, Receipts and Petty cash tabs.
-     The Overview, Tax, Bank, Vendor bills and Billing rules tabs
-     stay all-years — the API's summary endpoints take no fiscal
-     year. */
+     page, and every tab follows it — the Tax, Bank, Invoices,
+     Receipts, Petty cash, Vendor bills, Vendor services, Billing
+     rules, Billing forms and Rent and utilities tabs all filter to
+     the picked year (all years when 'all'). */
   const currentFy = (() => {
     if (meta && meta.current_fiscal_year) return meta.current_fiscal_year;
     const p = parseBs(meta && meta.today && meta.today.bs);
@@ -468,8 +468,8 @@ export default function App() {
                     ) : (
                       <>
                     {activeTab === 'overview' && <Overview data={sections.overview} api={api} fy={effectiveFy} refreshKey={ledgerRefresh} />}
-                    {activeTab === 'tax' && <Tax data={sections.tax} />}
-                    {activeTab === 'bank' && <Bank data={sections.bank} />}
+                    {activeTab === 'tax' && <Tax data={sections.tax} fy={effectiveFy} />}
+                    {activeTab === 'bank' && <Bank data={sections.bank} fy={effectiveFy} />}
                     {activeTab === 'invoices' && (
                       <Invoices
                         api={api}
@@ -498,13 +498,14 @@ export default function App() {
                       <VendorBills api={api} refreshKey={ledgerRefresh} fy={effectiveFy} />
                     )}
                     {activeTab === 'vendor-services' && (
-                      <VendorServices api={api} services={vendorServices} onWrote={handleWrote} />
+                      <VendorServices api={api} services={vendorServices} onWrote={handleWrote} fy={effectiveFy} refreshKey={ledgerRefresh} />
                     )}
                     {activeTab === 'rules' && (
                       <BillingRules
                         api={api}
                         clients={clients}
                         refreshKey={rulesRefresh}
+                        fy={effectiveFy}
                         onIssueInvoice={issueInvoiceFromRule}
                       />
                     )}
@@ -519,6 +520,7 @@ export default function App() {
                         onPrefillApplied={() => setBillingPrefill(null)}
                         vendorRefresh={vendorRefresh}
                         vendorServices={vendorServices}
+                        fy={effectiveFy}
                       />
                     )}
                     {activeTab === 'rent-utilities' && (

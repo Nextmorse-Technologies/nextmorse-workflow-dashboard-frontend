@@ -1,12 +1,15 @@
 import { useEffect, useState } from 'react';
 import { friendlyError, money } from '../api.js';
+import { bankForFy } from './Bank.jsx';
 
 /* The Laravel /ledger page, from the API: trial balance (the new
    endpoint), chart of accounts + FY balances, and the bank
    reconciliation + register entries (from /bank, as the Bank tab
    reads them). The trial balance and the chart follow the shared
-   fiscal-year picker; the bank sections are all-years, like the
-   Laravel page. */
+   fiscal-year picker, and so does the bank register table below;
+   the ledger-vs-register comparison stays all-years — the ledger
+   bank is cumulative cash from all invoice records (2020–2026),
+   so a one-year comparison against it would not balance. */
 export default function Ledger({ api, fy, refreshKey, initialTrial, initialAccounts, initialBalances, initialBank }) {
   const [trial, setTrial] = useState(initialTrial || null);
   const [accounts, setAccounts] = useState(initialAccounts || null);
@@ -47,6 +50,10 @@ export default function Ledger({ api, fy, refreshKey, initialTrial, initialAccou
 
   const effectiveFy = fy || 'all';
   const entries = (bank && bank.entries) || [];
+  /* The register entries follow the picker, like the Bank tab;
+     the balance shown with them is the register balance at the
+     end of the picked year. */
+  const bankShown = bank ? bankForFy(entries, effectiveFy) : null;
 
   return (
     <>
@@ -129,11 +136,12 @@ export default function Ledger({ api, fy, refreshKey, initialTrial, initialAccou
       )}
       {bank && (
         <>
-          <h4 className="h6 mt-3">Bank: ledger vs register</h4>
+          <h4 className="h6 mt-3">Bank: ledger vs register (all years)</h4>
           <p className="text-muted small">
             The ledger bank is cumulative cash from all invoice records (2020–2026); the register holds only{' '}
             {bank.entry_count !== undefined ? bank.entry_count : entries.length} entries from 2026, and most client
-            payments have no bank entry. The gap is documented, not forced equal.
+            payments have no bank entry. The gap is documented, not forced equal. This comparison is all-years by
+            nature — the ledger side is cumulative, not one year's flow.
           </p>
           <div className="table-responsive">
             <table className="table table-striped table-sm bg-white">
@@ -148,9 +156,14 @@ export default function Ledger({ api, fy, refreshKey, initialTrial, initialAccou
           </div>
           <h4 className="h6 mt-3">Bank register</h4>
           <p className="text-muted small">
-            {bank.entry_count !== undefined ? bank.entry_count : entries.length} entries &middot; Register balance:{' '}
-            {money(bank.balance)}
+            {bankShown.entries.length} entries &middot; Register balance{' '}
+            {effectiveFy === 'all' ? '' : 'at the end of ' + effectiveFy + ' '}:{' '}
+            {money(bankShown.balance)}
+            {effectiveFy !== 'all' && (
+              <> &middot; Deposits {money(bankShown.deposits)} &middot; Withdrawals {money(bankShown.withdrawals)}</>
+            )}
           </p>
+          {bankShown.entries.length ? (
           <div className="table-responsive">
             <table className="table table-striped table-sm bg-white">
               <thead>
@@ -163,7 +176,7 @@ export default function Ledger({ api, fy, refreshKey, initialTrial, initialAccou
                 </tr>
               </thead>
               <tbody>
-                {entries.map((e, i) => (
+                {bankShown.entries.map((e, i) => (
                   <tr key={e.id || i}>
                     <td>{e.date}</td>
                     <td>{e.direction}</td>
@@ -175,6 +188,9 @@ export default function Ledger({ api, fy, refreshKey, initialTrial, initialAccou
               </tbody>
             </table>
           </div>
+          ) : (
+            <p className="text-muted">No bank entries in this fiscal year.</p>
+          )}
         </>
       )}
     </>
