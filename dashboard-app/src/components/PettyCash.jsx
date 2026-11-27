@@ -13,11 +13,6 @@ function receiptNumber(r) {
   return r.display_number || '—';
 }
 
-function receiptUrl(apiBase, r) {
-  if (!apiBase) return null;
-  return apiBase.replace(/\/+$/, '') + '/billing/receipts/' + r.id;
-}
-
 export function isPettyInvoice(inv) {
   return inv.kind === 'sent' &&
     ['no_vat', 'no_vat_no_tds'].includes(inv.treatment);
@@ -27,7 +22,7 @@ export function total(items) {
   return items.reduce((sum, x) => sum + (Number(x.amount_npr) || 0), 0);
 }
 
-export default function PettyCash({ api, apiBase, refreshKey, fy, initialInvoices, initialReceipts }) {
+export default function PettyCash({ api, refreshKey, fy, initialInvoices, initialReceipts, onPrintInvoice, onPrintReceipt }) {
   const [invoices, setInvoices] = useState(initialInvoices || null);
   const [receipts, setReceipts] = useState(initialReceipts || null);
   const [loading, setLoading] = useState(!initialInvoices || !initialReceipts);
@@ -109,7 +104,7 @@ export default function PettyCash({ api, apiBase, refreshKey, fy, initialInvoice
                 Petty cash invoices — Subtotal: {money(total(shownInvoices))}
               </h4>
               {shownInvoices.length ? (
-                <GroupTable items={shownInvoices} apiBase={apiBase} />
+                <GroupTable items={shownInvoices} onPrint={onPrintInvoice} />
               ) : (
                 <p className="text-muted mb-0">No petty cash invoices in this fiscal year.</p>
               )}
@@ -140,10 +135,10 @@ export default function PettyCash({ api, apiBase, refreshKey, fy, initialInvoice
                           <td className="text-right">{money(r.amount_npr)}</td>
                           <td>{dateLabel(r.date_ad, r.date_bs)}</td>
                           <td>
-                            {receiptUrl(apiBase, r) ? (
-                              <a className="btn btn-sm btn-secondary" href={receiptUrl(apiBase, r)}>
+                            {onPrintReceipt ? (
+                              <button type="button" className="btn btn-sm btn-secondary" onClick={() => onPrintReceipt(r.id)}>
                                 {'Receipt ' + receiptNumber(r)}
-                              </a>
+                              </button>
                             ) : (
                               <span className="text-muted">{'Receipt ' + receiptNumber(r)}</span>
                             )}

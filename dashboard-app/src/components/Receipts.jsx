@@ -28,7 +28,7 @@ function receiptNumber(r) {
   return r.display_number || '—';
 }
 
-export default function Receipts({ data, fy, apiBase }) {
+export default function Receipts({ data, fy, onPrintReceipt }) {
   if (!data) return null;
   const list = data.data || [];
 
@@ -79,13 +79,14 @@ export default function Receipts({ data, fy, apiBase }) {
                           <td className="text-right">{money(r.amount_npr)}</td>
                           <td>{dateLabel(r.date_ad, r.date_bs)}</td>
                           <td>
-                            {apiBase ? (
-                              <a
+                            {onPrintReceipt ? (
+                              <button
+                                type="button"
                                 className="btn btn-sm btn-secondary"
-                                href={apiBase.replace(/\/+$/, '') + '/billing/receipts/' + r.id}
+                                onClick={() => onPrintReceipt(r.id)}
                               >
                                 {'Receipt ' + receiptNumber(r)}
-                              </a>
+                              </button>
                             ) : (
                               <span className="text-muted">{'Receipt ' + receiptNumber(r)}</span>
                             )}

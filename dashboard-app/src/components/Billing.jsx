@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import MenuPicker from './MenuPicker';
+import { tdsLabel, servicesForSupplier } from './VendorServices';
+import { SUPPLIERS, SUPPLIER_OTHER } from '../suppliers.js';
+export { SUPPLIERS, SUPPLIER_OTHER } from '../suppliers.js';
 import {
   TREATMENTS_FALLBACK,
   TREATMENT_LABELS,
@@ -41,22 +44,32 @@ export function prefillFromRule(rule, activeRules, clientDomain) {
 /* The suppliers on record (contacts categorised Supplier, Nov 2026).
    Suppliers are not clients — no client row exists for any of them —
    so a vendor bill names its supplier as free text, from this list
-   or typed in. */
-export const SUPPLIERS = [
-  'Babal.Host',
-  'Real Property Management Services Pvt. Ltd.',
-  'Bijay Khadya and Gas Store',
-  'Bagmati Office Suppliers',
-  'Print Bazar',
-  'Dish Home',
-];
-export const SUPPLIER_OTHER = '__other';
+   or typed in. The list lives in suppliers.js; this re-export keeps
+   existing imports working. */
 
 /* A payment is only ever recorded against a client invoice (sent or
    MOU receivable) in the Record payment form — vendor bills have
    their own form below. */
 export function receivableInvoices(openInvoices) {
   return (openInvoices || []).filter((inv) => inv.kind === 'sent' || inv.kind === 'mou_receivable');
+}
+
+/* The vendor bill POST body: the supplier, service, amount, VAT flag
+   and bill date. A picked saved service fills the service, amount
+   and VAT — and its TDS is only a mark on the record, so the body
+   carries no service id and posts no TDS. */
+export function vendorBillPayload({ supplier, service, amount, vatIncluded, dateAd, dueDate, billNo, notes }) {
+  const payload = {
+    supplier,
+    service,
+    amount_npr: amount,
+    vat_included: vatIncluded,
+    date_ad: dateAd,
+  };
+  if (dueDate) payload.due_date_ad = dueDate;
+  if (billNo) payload.supplier_bill_no = billNo;
+  if (notes) payload.notes = notes;
+  return payload;
 }
 
 /* The Service field's mode: a dropdown of the client's rules, a
@@ -182,7 +195,7 @@ export function joinInvoiceLines(lines) {
   return { service: parts.join(' + '), amount: Math.round(total * 100) / 100 };
 }
 
-export default function Billing({ api, clients, openInvoices, meta, onWrote, prefill, onPrefillApplied, vendorRefresh, initialVendorBills, initialOpenPicker }) {
+export default function Billing({ api, clients, openInvoices, meta, onWrote, prefill, onPrefillApplied, vendorRefresh, vendorServices, initialVendorBills, initialOpenPicker }) {
   const [invClient, setInvClient] = useState('');
   /* Which custom picker is open ('client', 'service-<key>',
      'attach-<key>', 'treatment', 'payInvoice', 'vbSupplier',
@@ -241,6 +254,10 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
   const [vbSupplier, setVbSupplier] = useState('');
   const [vbSupplierOther, setVbSupplierOther] = useState('');
   const [vbService, setVbService] = useState('');
+  /* The saved vendor service the bill is recorded from, when one was
+     picked: its amount and VAT fill in, and its TDS posts to the tax
+     register. '' means a typed-in service (no TDS is posted). */
+  const [vbServiceId, setVbServiceId] = useState('');
   const [vbAmount, setVbAmount] = useState('');
   const [vbVatIncluded, setVbVatIncluded] = useState('yes');
   const [vbDate, setVbDate] = useState('');
@@ -251,6 +268,29 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
   const [vbFormError, setVbFormError] = useState('');
   const [vbFormSuccess, setVbFormSuccess] = useState('');
   const [vbSubmitting, setVbSubmitting] = useState(false);
+
+  const vbSupplierName = vbSupplier === SUPPLIER_OTHER ? vbSupplierOther.trim() : vbSupplier;
+  /* The chosen supplier's saved services, for the Service picker. */
+  const vbSavedServices = (vbSupplier && vbSupplier !== SUPPLIER_OTHER)
+    ? servicesForSupplier(vendorServices, vbSupplier)
+    : [];
+  const vbPickedService = vbServiceId && vbServiceId !== '__other'
+    ? (vendorServices || []).find((s) => String(s.id) === String(vbServiceId)) || null
+    : null;
+
+  /* Pick a saved service: its amount and VAT fill in. The TDS is a
+     rate of the service amount (the agreement rent), never of the
+     bill amount — the form shows it as a mark; nothing is posted. */
+  function pickVbService(v) {
+    setOpenPicker(null);
+    if (v === '__other') { setVbServiceId('__other'); setVbService(''); setVbAmount(''); return; }
+    const svc = (vendorServices || []).find((s) => String(s.id) === String(v));
+    if (!svc) { setVbServiceId(''); return; }
+    setVbServiceId(String(svc.id));
+    setVbService(svc.service || '');
+    setVbAmount((svc.amount_npr !== null && svc.amount_npr !== undefined) ? String(svc.amount_npr) : '');
+    setVbVatIncluded(svc.vat_included ? 'yes' : 'no');
+  }
 
   /* Record vendor receipt: a payment against an open vendor bill. */
   const [vendorBills, setVendorBills] = useState(initialVendorBills || []);
@@ -694,16 +734,16 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
     if (!(amount > 0)) { setVbFormError('Enter an amount above 0.'); return; }
     if (!vbDate) { setVbFormError('Pick a bill date.'); return; }
 
-    const payload = {
+    const payload = vendorBillPayload({
       supplier,
       service: vbService.trim(),
-      amount_npr: amount,
-      vat_included: vbVatIncluded === 'yes',
-      date_ad: vbDate,
-    };
-    if (vbDueDate) payload.due_date_ad = vbDueDate;
-    if (vbBillNo.trim()) payload.supplier_bill_no = vbBillNo.trim();
-    if (vbNotes.trim()) payload.notes = vbNotes.trim();
+      amount,
+      vatIncluded: vbVatIncluded === 'yes',
+      dateAd: vbDate,
+      dueDate: vbDueDate || '',
+      billNo: vbBillNo.trim(),
+      notes: vbNotes.trim(),
+    });
 
     setVbSubmitting(true);
     try {
@@ -722,6 +762,7 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
       lines.push('It is Open — pay it from Record vendor receipt, or see it on the Vendor bills tab.');
       setVbFormSuccess(lines.join(' '));
       setVbService('');
+      setVbServiceId('');
       setVbAmount('');
       setVbDueDate('');
       setVbBillNo('');
@@ -1151,7 +1192,7 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
                       .concat([{ value: SUPPLIER_OTHER, label: 'Other — type a new supplier' }])}
                     open={openPicker === 'vbSupplier'}
                     onToggle={() => setOpenPicker(openPicker === 'vbSupplier' ? null : 'vbSupplier')}
-                    onPick={(v) => { setVbSupplier(v); setOpenPicker(null); }}
+                    onPick={(v) => { setVbSupplier(v); setVbServiceId(''); setVbService(''); setVbAmount(''); setOpenPicker(null); }}
                     ariaLabel="Supplier"
                   />
                   {vbSupplier === SUPPLIER_OTHER && (
@@ -1167,16 +1208,36 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
                   <FieldError msg={vbErrors.supplier && vbErrors.supplier.join(' ')} />
                 </div>
                 <div className="form-group">
-                  <label htmlFor="vbService">Service / item</label>
-                  <input
-                    id="vbService"
-                    className="form-control"
-                    type="text"
-                    placeholder="e.g. Single Unlimited hosting — example.com"
-                    maxLength="1000"
-                    value={vbService}
-                    onChange={(e) => setVbService(e.target.value)}
-                  />
+                  <label>Service / item</label>
+                  {vbSavedServices.length > 0 && vbServiceId !== '__other' ? (
+                    <MenuPicker
+                      buttonLabel={vbPickedService ? vbPickedService.service : 'Pick a saved service…'}
+                      options={[{ value: '', label: 'Pick a saved service…' }]
+                        .concat(vbSavedServices.map((s) => ({ value: String(s.id), label: s.service + ((s.amount_npr !== null && s.amount_npr !== undefined) ? ' — ' + money(s.amount_npr) : '') })))
+                        .concat([{ value: '__other', label: 'Other — type a new service' }])}
+                      open={openPicker === 'vbService'}
+                      onToggle={() => setOpenPicker(openPicker === 'vbService' ? null : 'vbService')}
+                      onPick={pickVbService}
+                      ariaLabel="Service / item"
+                    />
+                  ) : (
+                    <input
+                      id="vbService"
+                      className="form-control"
+                      type="text"
+                      placeholder="e.g. Single Unlimited hosting — example.com"
+                      maxLength="1000"
+                      value={vbService}
+                      onChange={(e) => setVbService(e.target.value)}
+                    />
+                  )}
+                  {vbPickedService && tdsLabel(vbPickedService) && (
+                    <small className="form-text text-muted">
+                      TDS {tdsLabel(vbPickedService)} — on the agreement
+                      rent, not on this bill&apos;s amount. It is only
+                      marked on the record, not counted into TDS payable.
+                    </small>
+                  )}
                   <FieldError msg={vbErrors.service && vbErrors.service.join(' ')} />
                 </div>
                 <div className="form-row">
@@ -1193,6 +1254,9 @@ export default function Billing({ api, clients, openInvoices, meta, onWrote, pre
                       onChange={(e) => setVbAmount(e.target.value)}
                     />
                     <FieldError msg={vbErrors.amount_npr && vbErrors.amount_npr.join(' ')} />
+                    {vbPickedService && vbPickedService.amount_npr !== null && vbPickedService.amount_npr !== undefined && (
+                      <small className="form-text text-muted">From the saved service — change it to what was actually paid.</small>
+                    )}
                   </div>
                   <div className="form-group col-md-6">
                     <label>Amount includes 13% VAT?</label>

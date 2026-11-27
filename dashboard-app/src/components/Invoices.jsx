@@ -73,18 +73,13 @@ export function statusBadge(status) {
   return 'badge-secondary';
 }
 
-function printUrl(apiBase, inv) {
-  if (!apiBase) return null;
-  return apiBase.replace(/\/+$/, '') + '/invoices/' + inv.id + '/print';
-}
-
 const GROUPS = [
   { key: 'tax', heading: 'Tax invoices' },
   { key: 'petty_cash', heading: 'Petty cash' },
   { key: 'other', heading: 'Other invoices' },
 ];
 
-export function GroupTable({ items, apiBase }) {
+export function GroupTable({ items, onPrint }) {
   return (
     <div className="table-responsive">
       <table className="table table-striped table-sm bg-white">
@@ -109,8 +104,8 @@ export function GroupTable({ items, apiBase }) {
               <td><span className={'badge ' + statusBadge(inv.status)}>{inv.status}</span></td>
               <td>{dateLabel(inv.date_ad, inv.date_bs)}</td>
               <td>
-                {printUrl(apiBase, inv) ? (
-                  <a className="btn btn-sm btn-secondary" href={printUrl(apiBase, inv)}>Print</a>
+                {onPrint ? (
+                  <button type="button" className="btn btn-sm btn-secondary" onClick={() => onPrint(inv.id)}>Print</button>
                 ) : (
                   <span className="text-muted">Print</span>
                 )}
@@ -123,7 +118,7 @@ export function GroupTable({ items, apiBase }) {
   );
 }
 
-export default function Invoices({ api, apiBase, refreshKey, fy, initialRows }) {
+export default function Invoices({ api, refreshKey, fy, initialRows, onPrintInvoice }) {
   const [rows, setRows] = useState(initialRows || null);
   const [loading, setLoading] = useState(!initialRows);
   const [loadError, setLoadError] = useState('');
@@ -197,7 +192,7 @@ export default function Invoices({ api, apiBase, refreshKey, fy, initialRows }) 
                       {g.heading} — Subtotal: {money(groupTotal(items))}
                     </h5>
                     {items.length ? (
-                      <GroupTable items={items} apiBase={apiBase} />
+                      <GroupTable items={items} onPrint={onPrintInvoice} />
                     ) : (
                       <p className="text-muted">No client invoices in this fiscal year.</p>
                     )}
@@ -235,8 +230,8 @@ export default function Invoices({ api, apiBase, refreshKey, fy, initialRows }) 
                             <span className="badge badge-success" title={statusTitle(inv) || undefined}>Locked</span>
                           </td>
                           <td>
-                            {printUrl(apiBase, inv) ? (
-                              <a className="btn btn-sm btn-secondary" href={printUrl(apiBase, inv)}>Print</a>
+                            {onPrintInvoice ? (
+                              <button type="button" className="btn btn-sm btn-secondary" onClick={() => onPrintInvoice(inv.id)}>Print</button>
                             ) : (
                               <span className="text-muted">Print</span>
                             )}
@@ -260,7 +255,7 @@ export default function Invoices({ api, apiBase, refreshKey, fy, initialRows }) 
                 Paid invoices in this fiscal year — cash that remains as petty cash.
               </p>
               {lockedPetty.length ? (
-                <GroupTable items={lockedPetty} apiBase={apiBase} />
+                <GroupTable items={lockedPetty} onPrint={onPrintInvoice} />
               ) : (
                 <p className="text-muted mb-0">No locked petty cash invoices in this fiscal year.</p>
               )}

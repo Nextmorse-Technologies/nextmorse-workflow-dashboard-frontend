@@ -10,11 +10,14 @@ import Overview from './components/Overview.jsx';
 import Tax from './components/Tax.jsx';
 import Bank from './components/Bank.jsx';
 import Invoices from './components/Invoices.jsx';
+import InvoicePrint from './components/InvoicePrint.jsx';
 import Receipts from './components/Receipts.jsx';
+import ReceiptPrint from './components/ReceiptPrint.jsx';
 import PettyCash from './components/PettyCash.jsx';
 import Billing from './components/Billing.jsx';
 import BillingRules from './components/BillingRules.jsx';
 import VendorBills from './components/VendorBills.jsx';
+import VendorServices from './components/VendorServices.jsx';
 import MenuPicker from './components/MenuPicker.jsx';
 
 const TABS = [
@@ -25,6 +28,7 @@ const TABS = [
   { key: 'receipts', label: 'Receipts' },
   { key: 'petty', label: 'Petty cash' },
   { key: 'vendor', label: 'Vendor bills' },
+  { key: 'vendor-services', label: 'Vendor services' },
   { key: 'rules', label: 'Billing rules' },
   { key: 'billing', label: 'Billing' },
 ];
@@ -129,6 +133,10 @@ export default function App() {
   const [meta, setMeta] = useState(null);
   const [clients, setClients] = useState([]);
   const [openInvoices, setOpenInvoices] = useState([]);
+  /* The saved vendor services (rent, utilities, …) — loaded once
+     at sign-in, like the clients, so the Billing tab's vendor bill
+     picker and the Vendor services tab both read the same list. */
+  const [vendorServices, setVendorServices] = useState([]);
   const [sections, setSections] = useState({});
   const [invoicesRefresh, setInvoicesRefresh] = useState(0);
   const [pettyRefresh, setPettyRefresh] = useState(0);
@@ -139,6 +147,10 @@ export default function App() {
      opens with the rule's client, service, amount, treatment, due
      date and domain filled in, all editable. */
   const [billingPrefill, setBillingPrefill] = useState(null);
+  /* The in-app print view: { kind: 'invoice' | 'receipt', id, from }
+     — Print opens the sheet/slip here, in the dashboard, instead of
+     redirecting to the Laravel app. Close goes back to `from`. */
+  const [printView, setPrintView] = useState(null);
   const [fy, setFy] = useState('');
   /* The Fiscal year picker's open state — it is a MenuPicker, not a
      native <select>, like every other picker in the dashboard. */
@@ -243,6 +255,15 @@ export default function App() {
     }
   }
 
+  async function loadVendorServices() {
+    try {
+      const resp = await api('/vendor-services?per_page=200');
+      setVendorServices((resp && resp.data) || []);
+    } catch (err) {
+      setDashError(friendlyError(err));
+    }
+  }
+
   /* A write happened: the open-invoice pickers and the invoice,
      receipt, petty cash and vendor sections are stale — refresh the
      pickers and tell the Invoices, Receipts, Petty cash and Vendor
@@ -259,6 +280,7 @@ export default function App() {
     setLedgerRefresh((n) => n + 1);
     setVendorRefresh((n) => n + 1);
     loadOpenInvoices();
+    loadVendorServices();
   }
 
   /* "Issue invoice" from a billing rule: open the Billing tab with
@@ -278,6 +300,7 @@ export default function App() {
     setMeta(null);
     setClients([]);
     setOpenInvoices([]);
+    setVendorServices([]);
     setSections({});
     setDashError('');
     setDashStatus('');
@@ -320,6 +343,7 @@ export default function App() {
         setAuthChecked(true);
         loadClients();
         loadOpenInvoices();
+        loadVendorServices();
       })
       .catch(() => {
         try {
@@ -341,6 +365,11 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [effectiveFy]);
 
+  function closePrintView() {
+    if (printView) setActiveTab(printView.from);
+    setPrintView(null);
+  }
+
   function selectTab(key) {
     setActiveTab(key);
     if (!signedIn) return;
@@ -348,6 +377,7 @@ export default function App() {
     if (key === 'invoices') return; /* the tab loads its own list */
     if (key === 'petty') return; /* the tab loads its own lists */
     if (key === 'vendor') return; /* the tab loads its own lists */
+    if (key === 'vendor-services') return; /* the list loads at sign-in */
     if (key === 'rules') return; /* the tab loads its own list */
     if (!sections[key]) loadSection(key);
   }
@@ -426,30 +456,46 @@ export default function App() {
 
                 <div className="tab-content pt-4">
                   <div className="tab-pane fade show active" role="tabpanel">
+                    {printView ? (
+                      printView.kind === 'invoice' ? (
+                        <InvoicePrint api={api} id={printView.id} onClose={closePrintView} />
+                      ) : (
+                        <ReceiptPrint api={api} id={printView.id} onClose={closePrintView} />
+                      )
+                    ) : (
+                      <>
                     {activeTab === 'overview' && <Overview data={sections.overview} api={api} fy={effectiveFy} refreshKey={ledgerRefresh} />}
                     {activeTab === 'tax' && <Tax data={sections.tax} />}
                     {activeTab === 'bank' && <Bank data={sections.bank} />}
                     {activeTab === 'invoices' && (
                       <Invoices
                         api={api}
-                        apiBase={authRef.current.base}
                         refreshKey={invoicesRefresh}
                         fy={effectiveFy}
+                        onPrintInvoice={(id) => setPrintView({ kind: 'invoice', id, from: 'invoices' })}
                       />
                     )}
                     {activeTab === 'receipts' && (
-                      <Receipts data={sections.receipts} fy={effectiveFy} apiBase={authRef.current.base} />
+                      <Receipts
+                        data={sections.receipts}
+                        fy={effectiveFy}
+                        onPrintReceipt={(id) => setPrintView({ kind: 'receipt', id, from: 'receipts' })}
+                      />
                     )}
                     {activeTab === 'petty' && (
                       <PettyCash
                         api={api}
-                        apiBase={authRef.current.base}
                         refreshKey={pettyRefresh}
                         fy={effectiveFy}
+                        onPrintInvoice={(id) => setPrintView({ kind: 'invoice', id, from: 'petty' })}
+                        onPrintReceipt={(id) => setPrintView({ kind: 'receipt', id, from: 'petty' })}
                       />
                     )}
                     {activeTab === 'vendor' && (
                       <VendorBills api={api} refreshKey={ledgerRefresh} fy={effectiveFy} />
+                    )}
+                    {activeTab === 'vendor-services' && (
+                      <VendorServices api={api} services={vendorServices} onWrote={handleWrote} />
                     )}
                     {activeTab === 'rules' && (
                       <BillingRules
@@ -469,7 +515,10 @@ export default function App() {
                         prefill={billingPrefill}
                         onPrefillApplied={() => setBillingPrefill(null)}
                         vendorRefresh={vendorRefresh}
+                        vendorServices={vendorServices}
                       />
+                    )}
+                      </>
                     )}
                   </div>
                 </div>
