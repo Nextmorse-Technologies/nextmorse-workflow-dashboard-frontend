@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { friendlyError, money } from '../api.js';
+import { fieldErrors, friendlyError, money, TREATMENT_LABELS, TREATMENTS_FALLBACK } from '../api.js';
 import { dateLabel, fyOfAd } from '../dates.js';
 import { SortHeader, useTableSort } from '../sort.js';
 
@@ -106,8 +106,180 @@ function RuleTable({ rows, clientNames, clientDomains, onIssueInvoice }) {
   );
 }
 
+/* One field error, under its input — the same shape as the
+   Billing tab's forms. */
+function FieldError({ msg }) {
+  return msg ? <small className="form-text text-danger">{msg}</small> : null;
+}
+
+/* The cycles a rule can bill on — the same set the API accepts. */
+const CYCLES = ['none', 'monthly', 'quarterly', '3-monthly', '4-monthly', 'annual'];
+
+/* The payload a create-rule submit sends: empty fields go as null
+   (the API treats them as unset), never as empty strings. */
+export function createRulePayload(form) {
+  return {
+    client_id: Number(form.clientId),
+    service: form.service.trim(),
+    cycle: form.cycle,
+    amount_npr: form.amount === '' ? null : Number(form.amount),
+    vat_applies: form.vatApplies,
+    treatment: form.treatment === '' ? null : form.treatment,
+    next_due_ad: form.nextDue === '' ? null : form.nextDue,
+    tds_status: form.tdsStatus,
+    tds_amount_npr: form.tdsAmount === '' ? null : Number(form.tdsAmount),
+    notes: form.notes.trim() === '' ? null : form.notes.trim(),
+  };
+}
+
+export function emptyRuleForm() {
+  return {
+    clientId: '', service: '', cycle: 'annual', amount: '',
+    vatApplies: 'unknown', treatment: '', nextDue: '',
+    tdsStatus: 'unknown', tdsAmount: '', notes: '',
+  };
+}
+
+/* Create a billing rule — the recurring charge itself. The new rule
+   is active, so it shows in the list and in the Issue-invoice picker
+   at once. Creating it posts nothing and numbers no invoice. */
+function CreateRuleForm({ api, clients, onCreated }) {
+  const [form, setForm] = useState(emptyRuleForm());
+  const [errors, setErrors] = useState({});
+  const [formError, setFormError] = useState('');
+  const [created, setCreated] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const set = (key, value) => setForm((f) => ({ ...f, [key]: value }));
+  const sortedClients = (clients || []).slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+
+  async function submit(e) {
+    e.preventDefault();
+    setErrors({});
+    setFormError('');
+    setCreated('');
+    setSubmitting(true);
+    try {
+      const resp = await api('/billing-rules', { method: 'POST', body: createRulePayload(form) });
+      const rec = (resp && resp.data) || {};
+      const name = (clients || []).find((c) => String(c.id) === String(form.clientId));
+      setCreated('Rule created for ' + (name ? name.name : 'client ' + form.clientId) + ' — ' + (rec.service || form.service) + '.');
+      setForm(emptyRuleForm());
+      if (onCreated) onCreated();
+    } catch (err) {
+      setErrors(fieldErrors(err));
+      setFormError(friendlyError(err));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="card mb-4">
+      <div className="card-body">
+        <h4 className="card-title h6">Create a billing rule</h4>
+        <p className="text-muted small">
+          A new recurring charge. It is active at once, so it shows in the list
+          and in the Issue-invoice picker. Creating it posts nothing and numbers
+          no invoice — issuing one from it is a separate step.
+        </p>
+        {created && <div className="alert alert-success" role="alert">{created}</div>}
+        {formError && <div className="alert alert-danger" role="alert">{formError}</div>}
+        <form onSubmit={submit}>
+          <div className="form-row">
+            <div className="form-group col-md-6">
+              <label htmlFor="rule-client">Client</label>
+              <select id="rule-client" className="form-control" value={form.clientId} onChange={(e) => set('clientId', e.target.value)} required>
+                <option value="">Pick a client…</option>
+                {sortedClients.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+              <FieldError msg={errors.client_id && errors.client_id[0]} />
+            </div>
+            <div className="form-group col-md-6">
+              <label htmlFor="rule-service">Service</label>
+              <input id="rule-service" type="text" className="form-control" value={form.service} onChange={(e) => set('service', e.target.value)} placeholder="e.g. Hosting & domains" required />
+              <FieldError msg={errors.service && errors.service[0]} />
+            </div>
+          </div>
+          <div className="form-row">
+            <div className="form-group col-md-4">
+              <label htmlFor="rule-cycle">Cycle</label>
+              <select id="rule-cycle" className="form-control" value={form.cycle} onChange={(e) => set('cycle', e.target.value)}>
+                {CYCLES.map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+              <FieldError msg={errors.cycle && errors.cycle[0]} />
+            </div>
+            <div className="form-group col-md-4">
+              <label htmlFor="rule-amount">Amount (NPR)</label>
+              <input id="rule-amount" type="number" min="0" step="0.01" className="form-control" value={form.amount} onChange={(e) => set('amount', e.target.value)} placeholder="Blank when it varies" />
+              <FieldError msg={errors.amount_npr && errors.amount_npr[0]} />
+            </div>
+            <div className="form-group col-md-4">
+              <label htmlFor="rule-treatment">Treatment</label>
+              <select id="rule-treatment" className="form-control" value={form.treatment} onChange={(e) => set('treatment', e.target.value)}>
+                <option value="">Unknown</option>
+                {TREATMENTS_FALLBACK.map((t) => (
+                  <option key={t} value={t}>{TREATMENT_LABELS[t]}</option>
+                ))}
+              </select>
+              <FieldError msg={errors.treatment && errors.treatment[0]} />
+            </div>
+          </div>
+          <div className="form-row">
+            <div className="form-group col-md-4">
+              <label htmlFor="rule-vat">VAT applies</label>
+              <select id="rule-vat" className="form-control" value={form.vatApplies} onChange={(e) => set('vatApplies', e.target.value)}>
+                <option value="unknown">Unknown</option>
+                <option value="yes">Yes</option>
+                <option value="no">No</option>
+                <option value="not applicable">Not applicable</option>
+              </select>
+              <FieldError msg={errors.vat_applies && errors.vat_applies[0]} />
+            </div>
+            <div className="form-group col-md-4">
+              <label htmlFor="rule-next-due">Next due</label>
+              <input id="rule-next-due" type="date" className="form-control" value={form.nextDue} onChange={(e) => set('nextDue', e.target.value)} />
+              <FieldError msg={errors.next_due_ad && errors.next_due_ad[0]} />
+            </div>
+            <div className="form-group col-md-4">
+              <label htmlFor="rule-tds">TDS</label>
+              <select id="rule-tds" className="form-control" value={form.tdsStatus} onChange={(e) => set('tdsStatus', e.target.value)}>
+                <option value="unknown">Unknown</option>
+                <option value="applies">Applies — Nextmorse pays it</option>
+                <option value="not applicable">Not applicable</option>
+              </select>
+              <FieldError msg={errors.tds_status && errors.tds_status[0]} />
+            </div>
+          </div>
+          <div className="form-row">
+            <div className="form-group col-md-4">
+              <label htmlFor="rule-tds-amount">TDS amount (NPR)</label>
+              <input id="rule-tds-amount" type="number" min="0" step="0.01" className="form-control" value={form.tdsAmount} onChange={(e) => set('tdsAmount', e.target.value)} placeholder="Only when TDS applies" />
+              <FieldError msg={errors.tds_amount_npr && errors.tds_amount_npr[0]} />
+            </div>
+            <div className="form-group col-md-8">
+              <label htmlFor="rule-notes">Notes</label>
+              <input id="rule-notes" type="text" className="form-control" value={form.notes} onChange={(e) => set('notes', e.target.value)} />
+              <FieldError msg={errors.notes && errors.notes[0]} />
+            </div>
+          </div>
+          <button type="submit" className="btn btn-primary" disabled={submitting}>
+            {submitting ? 'Creating…' : 'Create rule'}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 export default function BillingRules({ api, clients, refreshKey, fy, onIssueInvoice, initialRules, initialClientNames, initialClientDomains }) {
   const [rules, setRules] = useState(initialRules || null);
+  /* Bumped when a rule is created from the form, so the list
+     refetches and the new rule shows at once. */
+  const [createdCount, setCreatedCount] = useState(0);
   const [clientNames, setClientNames] = useState(initialClientNames || {});
   const [clientDomains, setClientDomains] = useState(initialClientDomains || {});
   const [loading, setLoading] = useState(!initialRules);
@@ -149,9 +321,9 @@ export default function BillingRules({ api, clients, refreshKey, fy, onIssueInvo
       }
     })();
     return () => { cancelled = true; };
-    // Re-fetch on Reload.
+    // Re-fetch on Reload, and when a rule is created.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [refreshKey]);
+  }, [refreshKey, createdCount]);
 
   /* The fiscal year comes from the shared picker in the tab bar
      (App); this tab only filters on it — by each rule's next due
@@ -172,6 +344,7 @@ export default function BillingRules({ api, clients, refreshKey, fy, onIssueInvo
           ? 'Showing all years.'
           : 'Showing ' + effectiveFy + ' — rules due in ' + effectiveFy + ' by their next due date.'}
       </p>
+      <CreateRuleForm api={api} clients={clients} onCreated={() => setCreatedCount((n) => n + 1)} />
       {rules && hiddenCount > 0 && (
         <p className="text-muted small">
           Showing {activeRules(rules).length} active rules — {hiddenCount} hidden (no billing or inactive).
