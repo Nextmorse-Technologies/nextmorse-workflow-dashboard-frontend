@@ -9,8 +9,8 @@ import { SortHeader, sortInvoices, useTableSort } from '../sort.js';
 export { compareInvoiceNumber, sortInvoices } from '../sort.js';
 
 /* The Tax invoices register: the sent tax invoices for the fiscal
-   year, then the locked tax invoices, then the credit notes that
-   reverse (part of) a locked tax invoice. Petty cash lives on its
+   year, then the credit notes that reverse (part of) a locked tax
+   invoice. Petty cash lives on its
    own tab — nothing non-taxed is shown here. Lists only — adding
    lives in the Billing tab. The credit-notes card reads from
    GET /api/v1/credit-notes and is read-only: a credit note is
@@ -234,12 +234,10 @@ export default function Invoices({ api, refreshKey, fy, initialRows, initialCred
   const [loading, setLoading] = useState(!initialRows || !initialCreditNotes);
   const [loadError, setLoadError] = useState('');
   /* One sort state per table. The tax invoices start sorted by
-     invoice number, ascending (Bijaya, 27 Nov 2026); the locked
-     table the same; the credit notes start in their original
-     order. Each table sorts only the rows actually shown, after
-     the fiscal-year filter. */
+     invoice number, ascending (Bijaya, 27 Nov 2026); the credit
+     notes start in their original order. Each table sorts only
+     the rows actually shown, after the fiscal-year filter. */
   const taxSort = useTableSort('number', 'asc');
-  const lockedSort = useTableSort('number', 'asc');
   const cnSort = useTableSort(null);
 
   /* The whole invoice list, once — 324 rows over two pages at most —
@@ -297,7 +295,6 @@ export default function Invoices({ api, refreshKey, fy, initialRows, initialCred
 
   const sent = shown.filter(isSent);
   const taxInvoices = sortInvoices(sent.filter(isTaxInvoice), taxSort.sortKey, taxSort.sortDir);
-  const locked = sortInvoices(lockedTax(sent), lockedSort.sortKey, lockedSort.sortDir);
   const shownCreditNotes = cnSort.apply(creditNotesForFy(creditNotes, effectiveFy), (cn, key) => {
     switch (key) {
       case 'invoice': return cn.invoice_number || '';
@@ -333,51 +330,6 @@ export default function Invoices({ api, refreshKey, fy, initialRows, initialCred
                 <GroupTable items={taxInvoices} onPrint={onPrintInvoice} sortKey={taxSort.sortKey} sortDir={taxSort.sortDir} onSort={taxSort.onSort} />
               ) : (
                 <p className="text-muted mb-0">No tax invoices in this fiscal year.</p>
-              )}
-            </div>
-          </div>
-          <div className="card mb-4">
-            <div className="card-body">
-              <h4 className="card-title h6">
-                Locked tax invoices ({locked.length}) — Subtotal: {money(groupTotal(locked))}
-              </h4>
-              {locked.length ? (
-                <div className="table-responsive">
-                  <table className="table table-striped table-sm bg-white">
-                    <thead>
-                      <tr>
-                        <SortHeader label="Invoice" sortKey="number" activeKey={lockedSort.sortKey} dir={lockedSort.sortDir} onSort={lockedSort.onSort} />
-                        <SortHeader label="Client" sortKey="client" activeKey={lockedSort.sortKey} dir={lockedSort.sortDir} onSort={lockedSort.onSort} />
-                        <SortHeader label="Amount" sortKey="amount" activeKey={lockedSort.sortKey} dir={lockedSort.sortDir} onSort={lockedSort.onSort} className="text-right" />
-                        <SortHeader label="Issued" sortKey="issued" activeKey={lockedSort.sortKey} dir={lockedSort.sortDir} onSort={lockedSort.onSort} />
-                        <SortHeader label="Status" sortKey="status" activeKey={lockedSort.sortKey} dir={lockedSort.sortDir} onSort={lockedSort.onSort} />
-                        <th></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {locked.map((inv) => (
-                        <tr key={inv.id}>
-                          <td>{inv.invoice_number || '—'}</td>
-                          <td>{inv.client_name || '—'}</td>
-                          <td className="text-right">{money(inv.amount_npr)}</td>
-                          <td>{dateLabel(inv.date_ad, inv.date_bs)}</td>
-                          <td>
-                            <span className="badge badge-success" title={statusTitle(inv) || undefined}>Locked</span>
-                          </td>
-                          <td>
-                            {onPrintInvoice ? (
-                              <button type="button" className="btn btn-sm btn-secondary" onClick={() => onPrintInvoice(inv.id)}>Print</button>
-                            ) : (
-                              <span className="text-muted">Print</span>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <p className="text-muted mb-0">No locked tax invoices in this fiscal year.</p>
               )}
             </div>
           </div>
